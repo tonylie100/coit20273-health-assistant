@@ -2,16 +2,17 @@ const express = require('express');
 const cors = require('cors');
 require('dotenv').config();
 
-// Import DB connection
+// Import Database Pool Connection
 const db = require('./config/db');
 
 const app = express();
 const PORT = process.env.PORT || 5000;
 
+// Middleware
 app.use(cors());
 app.use(express.json());
 
-// Health Check Route with DB verification
+// 1. Health Check Route (Verifies DB connection status)
 app.get('/health', async (req, res) => {
   try {
     const dbStatus = await db.query('SELECT NOW()');
@@ -32,17 +33,47 @@ app.get('/health', async (req, res) => {
   }
 });
 
-app.get('/api/v1/recommendations/health-summary', (req, res) => {
-  res.status(200).json({
-    success: true,
-    message: 'Recommendation Engine baseline operational.',
-    data: {
-      recommendations: [
-        { id: 1, type: 'activity', suggestion: 'Target 8,000 steps today based on recent trends.' },
-        { id: 2, type: 'sleep', suggestion: 'Maintain a consistent sleep window around 10:30 PM.' }
-      ]
+// 2. LIVE DATA ROUTE: Fetch Health Summary & Recommendations from PostgreSQL
+app.get('/api/v1/recommendations/health-summary', async (req, res) => {
+  try {
+    // Query default test user
+    const userResult = await db.query('SELECT id, full_name, email FROM users LIMIT 1');
+    if (userResult.rows.length === 0) {
+      return res.status(404).json({ success: false, message: 'No seed user found in database.' });
     }
-  });
+
+    const user = userResult.rows[0];
+
+    // Fetch latest recorded health metrics for this user
+    const metricsResult = await db.query(
+      'SELECT step_count, sleep_hours, heart_rate_avg, recorded_date FROM health_metrics WHERE user_id = $1 ORDER BY recorded_date DESC LIMIT 1',
+      [user.id]
+    );
+
+    // Fetch recommendations for this user
+    const recsResult = await db.query(
+      'SELECT id, category, suggestion, status, created_at FROM recommendations WHERE user_id = $1',
+      [user.id]
+    );
+
+    // Return real combined data from PostgreSQL
+    res.status(200).json({
+      success: true,
+      message: 'Live database records fetched successfully.',
+      data: {
+        user: user,
+        latestMetrics: metricsResult.rows[0] || null,
+        recommendations: recsResult.rows
+      }
+    });
+  } catch (error) {
+    console.error('❌ Database Query Error:', error.message);
+    res.status(500).json({
+      success: false,
+      error: 'Failed to retrieve health summary from database',
+      details: error.message
+    });
+  }
 });
 
 app.listen(PORT, () => {
