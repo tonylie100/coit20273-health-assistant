@@ -10,72 +10,21 @@ import {
   Platform,
 } from 'react-native';
 
+import { getClaudeResponse } from '../services/claudeService';
+
 type Message = {
   id: string;
   text: string;
   sender: 'user' | 'bot';
 };
 
-const getBotResponse = (userMessage: string): string => {
-  const text = userMessage.toLowerCase();
-
-  if (
-    text.includes('stress') ||
-    text.includes('stressed') ||
-    text.includes('anxiety') ||
-    text.includes('anxious')
-  ) {
-    return 'It sounds like you may be feeling stressed. Try taking a few slow breaths and taking a short break. If these feelings continue or become difficult to manage, consider speaking with a qualified health professional.';
-  }
-
-  if (
-    text.includes('sleep') ||
-    text.includes('tired') ||
-    text.includes('insomnia')
-  ) {
-    return 'Good sleep is important for overall wellbeing. Try keeping a regular sleep schedule, reducing screen time before bed, and creating a comfortable sleep environment.';
-  }
-
-  if (
-    text.includes('exercise') ||
-    text.includes('workout') ||
-    text.includes('fitness')
-  ) {
-    return 'Regular physical activity can support physical and mental wellbeing. Start with activities that are comfortable for you, such as walking, stretching, or other moderate exercise.';
-  }
-
-  if (
-    text.includes('food') ||
-    text.includes('diet') ||
-    text.includes('eat') ||
-    text.includes('nutrition')
-  ) {
-    return 'A balanced diet can support overall health. Aim for a variety of vegetables, fruits, whole grains, protein sources, and adequate water throughout the day.';
-  }
-
-  if (
-    text.includes('sad') ||
-    text.includes('depressed') ||
-    text.includes('unhappy') ||
-    text.includes('lonely')
-  ) {
-    return 'I am sorry that you are feeling this way. Talking to someone you trust and maintaining supportive routines can help. If you are experiencing persistent or severe emotional distress, consider contacting a qualified mental health professional.';
-  }
-
-  if (
-    text.includes('hello') ||
-    text.includes('hi') ||
-    text.includes('hey')
-  ) {
-    return 'Hello! I am your AI Health Assistant. You can ask me about general wellness, sleep, exercise, nutrition, stress, or mental wellbeing.';
-  }
-
-  return 'Thanks for sharing. I can provide general health and wellness information about topics such as sleep, exercise, nutrition, stress, and mental wellbeing.';
+type ClaudeMessage = {
+  role: 'user' | 'assistant';
+  content: string;
 };
 
 export default function ChatbotScreen() {
   const [message, setMessage] = useState('');
-
   const [isTyping, setIsTyping] = useState(false);
 
   const [messages, setMessages] = useState<Message[]>([
@@ -86,7 +35,7 @@ export default function ChatbotScreen() {
     },
   ]);
 
-  const sendMessage = () => {
+  const sendMessage = async () => {
     const trimmedMessage = message.trim();
 
     if (!trimmedMessage || isTyping) {
@@ -99,6 +48,21 @@ export default function ChatbotScreen() {
       sender: 'user',
     };
 
+    const previousConversation: ClaudeMessage[] = messages
+      .filter((item) => item.id !== '1')
+      .map((item) => ({
+        role: item.sender === 'user' ? 'user' : 'assistant',
+        content: item.text,
+      }));
+
+    const conversationForClaude: ClaudeMessage[] = [
+      ...previousConversation,
+      {
+        role: 'user',
+        content: trimmedMessage,
+      },
+    ];
+
     setMessages((previousMessages) => [
       ...previousMessages,
       userMessage,
@@ -107,10 +71,22 @@ export default function ChatbotScreen() {
     setMessage('');
     setIsTyping(true);
 
-    setTimeout(() => {
+    try {
+      const apiKey =
+        process.env.EXPO_PUBLIC_ANTHROPIC_API_KEY;
+
+      if (!apiKey) {
+        throw new Error('Claude API key is not configured.');
+      }
+
+      const response = await getClaudeResponse(
+        conversationForClaude,
+        apiKey
+      );
+
       const botMessage: Message = {
         id: `${Date.now()}-bot`,
-        text: getBotResponse(trimmedMessage),
+        text: response,
         sender: 'bot',
       };
 
@@ -118,9 +94,23 @@ export default function ChatbotScreen() {
         ...previousMessages,
         botMessage,
       ]);
+    } catch (error) {
+      console.log('Claude API error:', error);
 
+      const fallbackMessage: Message = {
+        id: `${Date.now()}-error`,
+        text:
+          'The AI service is currently unavailable. Your message was received, but a live Claude response could not be generated. Please try again later.',
+        sender: 'bot',
+      };
+
+      setMessages((previousMessages) => [
+        ...previousMessages,
+        fallbackMessage,
+      ]);
+    } finally {
       setIsTyping(false);
-    }, 700);
+    }
   };
 
   return (
@@ -166,7 +156,12 @@ export default function ChatbotScreen() {
         )}
         ListFooterComponent={
           isTyping ? (
-            <View style={[styles.messageBubble, styles.botBubble]}>
+            <View
+              style={[
+                styles.messageBubble,
+                styles.botBubble,
+              ]}
+            >
               <Text style={styles.typingText}>
                 AI Health Assistant is typing...
               </Text>
