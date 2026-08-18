@@ -5,6 +5,9 @@ require('dotenv').config();
 // Import Database Pool Connection
 const db = require('./config/db');
 
+// 1. ADD THIS: Import your recommendation routes module
+const recommendationRoutes = require('./routes/recommendationRoutes');
+
 const app = express();
 const PORT = process.env.PORT || 5000;
 
@@ -12,7 +15,7 @@ const PORT = process.env.PORT || 5000;
 app.use(cors());
 app.use(express.json());
 
-// 1. Health Check Route (Verifies DB connection status)
+// Health Check Route (Verifies DB connection status)
 app.get('/health', async (req, res) => {
   try {
     const dbStatus = await db.query('SELECT NOW()');
@@ -33,10 +36,12 @@ app.get('/health', async (req, res) => {
   }
 });
 
-// 2. LIVE DATA ROUTE: Fetch Health Summary & Recommendations from PostgreSQL
+// 2. ADD THIS: Register Recommendation Engine endpoints
+app.use('/api/v1/recommendations', recommendationRoutes);
+
+// 3. LIVE DATA ROUTE: Keep for baseline health testing
 app.get('/api/v1/recommendations/health-summary', async (req, res) => {
   try {
-    // Query default test user
     const userResult = await db.query('SELECT id, full_name, email FROM users LIMIT 1');
     if (userResult.rows.length === 0) {
       return res.status(404).json({ success: false, message: 'No seed user found in database.' });
@@ -44,19 +49,16 @@ app.get('/api/v1/recommendations/health-summary', async (req, res) => {
 
     const user = userResult.rows[0];
 
-    // Fetch latest recorded health metrics for this user
     const metricsResult = await db.query(
       'SELECT step_count, sleep_hours, heart_rate_avg, recorded_date FROM health_metrics WHERE user_id = $1 ORDER BY recorded_date DESC LIMIT 1',
       [user.id]
     );
 
-    // Fetch recommendations for this user
     const recsResult = await db.query(
       'SELECT id, category, suggestion, status, created_at FROM recommendations WHERE user_id = $1',
       [user.id]
     );
 
-    // Return real combined data from PostgreSQL
     res.status(200).json({
       success: true,
       message: 'Live database records fetched successfully.',
