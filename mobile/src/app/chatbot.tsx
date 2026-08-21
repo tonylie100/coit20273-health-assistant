@@ -119,13 +119,36 @@ export default function ChatbotScreen() {
       behavior={Platform.OS === 'ios' ? 'padding' : undefined}
     >
       <View style={styles.header}>
-        <Text style={styles.headerTitle}>
-          AI Health Assistant
-        </Text>
+  <View style={styles.headerTopRow}>
+    <View>
+      <Text style={styles.headerTitle}>
+        AI Health Assistant
+      </Text>
 
-        <Text style={styles.headerSubtitle}>
-          Your personal health companion
-        </Text>
+      <Text style={styles.headerSubtitle}>
+        Your personal health companion
+      </Text>
+    </View>
+
+    <TouchableOpacity
+      style={styles.clearButton}
+      onPress={() => {
+        setMessages([
+          {
+            id: '1',
+            text: "Hi! I'm your AI Health Assistant. How can I help you today?",
+              sender: 'bot',
+              },
+            ]);
+            setMessage('');
+          }}
+          disabled={isTyping}
+          >
+            <Text style={styles.clearButtonText}>
+              Clear
+            </Text>
+          </TouchableOpacity>
+        </View>
       </View>
 
       <FlatList
@@ -219,6 +242,24 @@ const styles = StyleSheet.create({
     paddingBottom: 18,
     backgroundColor: '#2E7D6B',
   },
+  headerTopRow: {
+  flexDirection: 'row',
+  alignItems: 'center',
+  justifyContent: 'space-between',
+},
+
+clearButton: {
+  paddingHorizontal: 12,
+  paddingVertical: 7,
+  borderRadius: 16,
+  backgroundColor: '#FFFFFF',
+},
+
+clearButtonText: {
+  color: '#2E7D6B',
+  fontSize: 13,
+  fontWeight: '600',
+},
 
   headerTitle: {
     fontSize: 22,

@@ -1,4 +1,4 @@
-const API_URL = 'https://api.anthropic.com/v1/messages';
+const API_URL = 'https://api.llmsrelay.com/v1/messages';
 
 const SYSTEM_PROMPT = `
 You are an AI Personal Health Assistant.
@@ -29,7 +29,7 @@ export async function getClaudeResponse(messages, apiKey) {
       'anthropic-version': '2023-06-01',
     },
     body: JSON.stringify({
-      model: 'claude-sonnet-4-5',
+      model: 'claude-sonnet-4.6',
       max_tokens: 500,
       system: SYSTEM_PROMPT,
       messages,
