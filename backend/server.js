@@ -1,9 +1,12 @@
+require('dotenv').config();
+
 const cors = require('cors');
 const dashboardRoutes = require('./routes/dashboard');
 const healthDataRoutes = require('./routes/healthData');
 const goalRoutes = require('./routes/goals');
 const profileRoutes = require('./routes/profile');
 const authRoutes = require('./routes/auth');
+const chatbotRoutes = require('./routes/chatbot');
 const express = require('express');
 const pool = require('./db');
 
@@ -17,6 +20,7 @@ app.use('/api/profile', profileRoutes);
 app.use('/api/goals', goalRoutes);
 app.use('/api/health-data', healthDataRoutes);
 app.use('/api/dashboard', dashboardRoutes);
+app.use('/api/chatbot', chatbotRoutes);
 
 app.get('/', (req, res) => {
   res.send('AI-Powered Personal Health Assistant Backend is running');
