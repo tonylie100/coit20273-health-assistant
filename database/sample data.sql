@@ -1,3 +1,5 @@
+
+
 INSERT INTO users (
     full_name,
     email,
@@ -10,22 +12,15 @@ INSERT INTO users (
 VALUES (
     'Nani',
     'Nani@example.com',
-    'password123',
+    'sample_firebase_uid_001',
     25,
     'Male',
     175.5,
     72.0
 );
 
-
-
-
-SELECT * FROM users;
-
-SELECT user_id, full_name, email, firebase_uid
+SELECT *
 FROM users;
-
-
 
 
 
@@ -45,29 +40,94 @@ VALUES (
     CURRENT_DATE + INTERVAL '30 days'
 );
 
-
-SELECT * FROM goals;
+SELECT *
+FROM goals;
 
 
 
 
 INSERT INTO health_data (
     user_id,
+    record_date,
     steps,
     heart_rate,
     sleep_hours,
-    calories_burned
+    calories_burned,
+    water_intake
 )
-VALUES (
+VALUES
+(
     1,
+    '2026-08-18',
+    7200,
+    76,
+    6.8,
+    480,
+    1.8
+),
+(
+    1,
+    '2026-08-19',
     8500,
-    78,
+    74,
+    7.2,
+    520,
+    2.1
+),
+(
+    1,
+    '2026-08-20',
+    9100,
+    72,
     7.5,
-    520
+    560,
+    2.4
+),
+(
+    1,
+    '2026-08-21',
+    6800,
+    78,
+    6.5,
+    450,
+    1.7
+),
+(
+    1,
+    '2026-08-22',
+    10000,
+    70,
+    8.0,
+    610,
+    2.8
+),
+(
+    1,
+    '2026-08-23',
+    9400,
+    73,
+    7.6,
+    575,
+    2.5
+),
+(
+    1,
+    '2026-08-24',
+    8800,
+    71,
+    7.8,
+    540,
+    2.3
 );
 
 
-SELECT * FROM health_data;
+
+
+SELECT *
+FROM health_data
+WHERE user_id = 1
+ORDER BY record_date;
+
 
 
 
@@ -80,10 +140,12 @@ INSERT INTO dashboard (
 )
 VALUES (
     1,
-    8500,
-    520,
-    78,
-    7.5
+    61800,
+    3735,
+    73.43,
+    7.34
 );
 
-SELECT * from dashboard;
+
+SELECT *
+FROM dashboard;
