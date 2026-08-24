@@ -2,7 +2,7 @@ CREATE TABLE users (
     user_id SERIAL PRIMARY KEY,
     full_name VARCHAR(100) NOT NULL,
     email VARCHAR(100) UNIQUE NOT NULL,
-    firebase_uid VARCHAR(128) UNIQUE,,
+    firebase_uid VARCHAR(128) UNIQUE,
     age INT,
     gender VARCHAR(20),
     height DECIMAL(5,2),
@@ -40,6 +40,7 @@ CREATE TABLE health_data (
     heart_rate INT,
     sleep_hours DECIMAL(4,2),
     calories_burned DECIMAL(6,2),
+    water_intake DECIMAL(6,2),
 
     CONSTRAINT fk_health_user
         FOREIGN KEY(user_id)
