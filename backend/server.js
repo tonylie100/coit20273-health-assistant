@@ -1,5 +1,5 @@
 require('dotenv').config();
-
+const metricsRoutes = require('./routes/metrics');
 const cors = require('cors');
 const dashboardRoutes = require('./routes/dashboard');
 const healthDataRoutes = require('./routes/healthData');
@@ -21,6 +21,7 @@ app.use('/api/goals', goalRoutes);
 app.use('/api/health-data', healthDataRoutes);
 app.use('/api/dashboard', dashboardRoutes);
 app.use('/api/chatbot', chatbotRoutes);
+app.use('/api/v1/metrics', metricsRoutes);
 
 app.get('/', (req, res) => {
   res.send('AI-Powered Personal Health Assistant Backend is running');
