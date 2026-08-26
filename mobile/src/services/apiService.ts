@@ -38,3 +38,36 @@ export async function generateRecommendations(userId: string) {
 
   return response.json();
 }
+
+export async function sendChatbotMessage(message: string) {
+  const response = await fetch(
+    `${API_BASE_URL}/api/chatbot/message`,
+    {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+      },
+      body: JSON.stringify({
+        message,
+      }),
+    }
+  );
+
+  if (!response.ok) {
+    const errorText = await response.text();
+
+    throw new Error(
+      `Failed to send chatbot message: ${response.status} ${errorText}`
+    );
+  }
+
+  const data = await response.json();
+
+  if (!data.success) {
+    throw new Error(
+      data.error || 'Chatbot request failed.'
+    );
+  }
+
+  return data;
+}
