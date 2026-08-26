@@ -10,7 +10,7 @@ import {
   Platform,
 } from 'react-native';
 
-import { getClaudeResponse } from '../services/claudeService';
+import { sendChatbotMessage } from '../services/apiService';
 
 type Message = {
   id: string;
@@ -18,10 +18,6 @@ type Message = {
   sender: 'user' | 'bot';
 };
 
-type ClaudeMessage = {
-  role: 'user' | 'assistant';
-  content: string;
-};
 
 export default function ChatbotScreen() {
   const [message, setMessage] = useState('');
@@ -48,21 +44,6 @@ export default function ChatbotScreen() {
       sender: 'user',
     };
 
-    const previousConversation: ClaudeMessage[] = messages
-      .filter((item) => item.id !== '1')
-      .map((item) => ({
-        role: item.sender === 'user' ? 'user' : 'assistant',
-        content: item.text,
-      }));
-
-    const conversationForClaude: ClaudeMessage[] = [
-      ...previousConversation,
-      {
-        role: 'user',
-        content: trimmedMessage,
-      },
-    ];
-
     setMessages((previousMessages) => [
       ...previousMessages,
       userMessage,
@@ -72,18 +53,8 @@ export default function ChatbotScreen() {
     setIsTyping(true);
 
     try {
-      const apiKey =
-        process.env.EXPO_PUBLIC_ANTHROPIC_API_KEY;
-
-      if (!apiKey) {
-        throw new Error('Claude API key is not configured.');
-      }
-
-      const response = await getClaudeResponse(
-        conversationForClaude,
-        apiKey
-      );
-
+      const data = await sendChatbotMessage(trimmedMessage);
+      const response = data.reply;
       const botMessage: Message = {
         id: `${Date.now()}-bot`,
         text: response,
@@ -95,7 +66,7 @@ export default function ChatbotScreen() {
         botMessage,
       ]);
     } catch (error) {
-      console.log('Claude API error:', error);
+      console.log('Chatbot API error:', error);
 
       const fallbackMessage: Message = {
         id: `${Date.now()}-error`,
