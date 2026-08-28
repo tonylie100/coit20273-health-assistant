@@ -1,0 +1,9 @@
+$kind: http-request
+name: Generate5000
+description: ""
+url: http://localhost:5000/api/v1/recommendations/generate
+method: POST
+body:
+  type: json
+  content: "{\r\n  \"userId\": 1\r\n}"
+order: 1787894517451
