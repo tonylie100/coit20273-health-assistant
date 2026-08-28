@@ -1,46 +1,40 @@
-// src/controllers/recommendationController.js
 const recommendationService = require('../services/recommendationService');
 
-// GET /api/v1/recommendations/:userId
-async function getRecommendations(req, res) {
+async function createRecommendations(req, res) {
   try {
-    const userId = parseInt(req.params.userId, 10);
-    if (isNaN(userId)) {
-      return res.status(400).json({ status: 'error', message: 'Invalid user ID' });
+    const { userId } = req.body;
+    if (!userId) {
+      return res.status(400).json({ error: 'userId is required in request body.' });
     }
 
-    const recommendations = await recommendationService.getStoredRecommendations(userId);
-    return res.status(200).json({
-      status: 'success',
-      data: recommendations
+    const recommendations = await recommendationService.generateUserRecommendations(userId);
+    return res.status(201).json({
+      success: true,
+      count: recommendations.length,
+      data: recommendations,
     });
-  } catch (err) {
-    console.error('Error fetching recommendations:', err);
-    return res.status(500).json({ status: 'error', message: 'Internal server error' });
+  } catch (error) {
+    console.error('Controller Error:', error.message);
+    return res.status(500).json({ error: 'Failed to generate recommendations.' });
   }
 }
 
-// POST /api/v1/recommendations/generate/:userId
-async function triggerRecommendationGeneration(req, res) {
+async function fetchRecommendations(req, res) {
   try {
-    const userId = parseInt(req.params.userId, 10);
-    if (isNaN(userId)) {
-      return res.status(400).json({ status: 'error', message: 'Invalid user ID' });
-    }
-
-    const newRecs = await recommendationService.generateUserRecommendations(userId);
-    return res.status(201).json({
-      status: 'success',
-      message: 'Recommendations generated successfully',
-      data: newRecs
+    const { userId } = req.params;
+    const recommendations = await recommendationService.getStoredRecommendations(userId);
+    return res.status(200).json({
+      success: true,
+      count: recommendations.length,
+      data: recommendations,
     });
-  } catch (err) {
-    console.error('Error generating recommendations:', err);
-    return res.status(500).json({ status: 'error', message: 'Internal server error' });
+  } catch (error) {
+    console.error('Controller Error:', error.message);
+    return res.status(500).json({ error: 'Failed to fetch stored recommendations.' });
   }
 }
 
 module.exports = {
-  getRecommendations,
-  triggerRecommendationGeneration
+  createRecommendations,
+  fetchRecommendations,
 };

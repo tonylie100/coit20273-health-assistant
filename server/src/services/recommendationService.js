@@ -1,8 +1,11 @@
-// src/services/recommendationService.js
-const db = require('../config/db'); // Your PostgreSQL db connection
+require('dotenv').config();
+const db = require('../config/db');
+const { GoogleGenerativeAI } = require('@google/generative-ai');
+
+const genAI = new GoogleGenerativeAI(process.env.GEMINI_API_KEY);
 
 /**
- * Generates recommendations for a specific user based on recent health metrics.
+ * Generates dynamic AI recommendations for a specific user using Gemini API based on recent health metrics.
  */
 async function generateUserRecommendations(userId) {
   // 1. Fetch recent 7-day average metrics for the user
@@ -22,49 +25,48 @@ async function generateUserRecommendations(userId) {
   const avgSleep = parseFloat(stats.avg_sleep) || 0;
   const avgWater = parseFloat(stats.avg_water) || 0;
 
-  const newRecommendations = [];
+  let newRecommendations = [];
 
-  // Rule 1: Sleep evaluation
-  if (avgSleep > 0 && avgSleep < 7.0) {
-    newRecommendations.push({
-      category: 'Sleep',
-      title: 'Sleep Deficit Warning',
-      message: `Your average sleep over the last week is ${avgSleep} hours. Aim for 7–8 hours tonight to boost recovery.`,
-      priority: 'high'
-    });
+  try {
+    const prompt = `
+You are an AI Personal Health Assistant. Analyze the following 7-day average health metrics for User ID ${userId}:
+- Average Daily Steps: ${avgSteps}
+- Average Nightly Sleep: ${avgSleep} hours
+- Average Daily Water Intake: ${avgWater} ml
+
+Generate 1 to 3 targeted, actionable health recommendations based on these metrics.
+Return strictly a valid JSON array of objects. Do not include markdown tags, preamble, or extra text.
+
+JSON Format required:
+[
+  {
+    "category": "Sleep" | "Activity" | "Hydration" | "General",
+    "title": "Concise Warning or Goal Title",
+    "message": "Specific insight mentioning metrics and concrete target.",
+    "priority": "low" | "medium" | "high"
   }
+]
+`;
 
-  // Rule 2: Physical activity evaluation
-  if (avgSteps > 0 && avgSteps < 7500) {
-    newRecommendations.push({
-      category: 'Activity',
-      title: 'Increase Daily Steps',
-      message: `You are averaging ${avgSteps} steps daily. Try adding a 15-minute brisk walk to reach the 8,000-step target.`,
-      priority: 'medium'
-    });
-  }
+    const model = genAI.getGenerativeModel({ model: 'gemini-3.6-flash' });
+    const result = await model.generateContent(prompt);
+    const responseText = result.response.text();
 
-  // Rule 3: Hydration evaluation
-  if (avgWater > 0 && avgWater < 2000) {
-    newRecommendations.push({
-      category: 'Hydration',
-      title: 'Hydration Boost Needed',
-      message: `Your daily water intake average is ${avgWater} ml. Drink at least 2,000 ml daily to maintain concentration.`,
-      priority: 'low'
-    });
-  }
+    // Clean markdown code blocks if present and parse JSON
+    const cleanJson = responseText.replace(/^```json\s*/i, '').replace(/```$/i, '').trim();
+    newRecommendations = JSON.parse(cleanJson);
 
-  // Default recommendation if no issues detected or no data
-  if (newRecommendations.length === 0) {
+  } catch (error) {
+    console.error('Gemini API Recommendation Error:', error.message);
     newRecommendations.push({
       category: 'General',
-      title: 'Great Health Balance',
-      message: 'Your recent health metrics look solid! Keep up your regular daily routine.',
-      priority: 'low'
+      title: 'Health Routine Review',
+      message: 'Unable to process dynamic AI insights. Maintain consistent sleep, steps, and water intake.',
+      priority: 'low',
     });
   }
 
-  // 2. Persist recommendations into database
+  // 2. Persist generated recommendations into PostgreSQL
   for (const rec of newRecommendations) {
     await db.query(
       `INSERT INTO user_recommendations (user_id, category, title, message, priority)

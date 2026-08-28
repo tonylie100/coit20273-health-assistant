@@ -5,17 +5,17 @@ require('dotenv').config();
 // Import Database Pool Connection
 const db = require('./config/db');
 
-// 1. ADD THIS: Import your recommendation routes module
+// Import recommendation routes module
 const recommendationRoutes = require('./routes/recommendationRoutes');
 
 const app = express();
 const PORT = process.env.PORT || 5000;
 
-// Middleware
+// Core Middleware
 app.use(cors());
 app.use(express.json());
 
-// Health Check Route (Verifies DB connection status)
+// 1. Health Check Route (Verifies API and DB connectivity)
 app.get('/health', async (req, res) => {
   try {
     const dbStatus = await db.query('SELECT NOW()');
@@ -24,22 +24,22 @@ app.get('/health', async (req, res) => {
       subsystem: 'Recommendation Engine API Gateway',
       database: 'Connected',
       dbTimestamp: dbStatus.rows[0].now,
-      timestamp: new Date().toISOString()
+      timestamp: new Date().toISOString(),
     });
   } catch (error) {
     res.status(500).json({
       status: 'ERROR',
       subsystem: 'Recommendation Engine API Gateway',
       database: 'Disconnected',
-      error: error.message
+      error: error.message,
     });
   }
 });
 
-// 2. ADD THIS: Register Recommendation Engine endpoints
+// 2. Register Recommendation Engine Endpoints
 app.use('/api/v1/recommendations', recommendationRoutes);
 
-// 3. LIVE DATA ROUTE: Keep for baseline health testing
+// 3. Baseline Health Check & Debug Route
 app.get('/api/v1/recommendations/health-summary', async (req, res) => {
   try {
     const userResult = await db.query('SELECT id, full_name, email FROM users LIMIT 1');
@@ -49,13 +49,22 @@ app.get('/api/v1/recommendations/health-summary', async (req, res) => {
 
     const user = userResult.rows[0];
 
+    // Query weekly metrics from health_data table
     const metricsResult = await db.query(
-      'SELECT step_count, sleep_hours, heart_rate_avg, recorded_date FROM health_metrics WHERE user_id = $1 ORDER BY recorded_date DESC LIMIT 1',
+      `SELECT steps, sleep_hours, water_intake, created_at 
+       FROM health_data 
+       WHERE user_id = $1 
+       ORDER BY created_at DESC 
+       LIMIT 1`,
       [user.id]
     );
 
+    // Query recent generated recommendations
     const recsResult = await db.query(
-      'SELECT id, category, suggestion, status, created_at FROM recommendations WHERE user_id = $1',
+      `SELECT id, category, title, message, priority, created_at 
+       FROM user_recommendations 
+       WHERE user_id = $1 
+       ORDER BY created_at DESC`,
       [user.id]
     );
 
@@ -65,17 +74,28 @@ app.get('/api/v1/recommendations/health-summary', async (req, res) => {
       data: {
         user: user,
         latestMetrics: metricsResult.rows[0] || null,
-        recommendations: recsResult.rows
-      }
+        recommendations: recsResult.rows,
+      },
     });
   } catch (error) {
     console.error('❌ Database Query Error:', error.message);
     res.status(500).json({
       success: false,
       error: 'Failed to retrieve health summary from database',
-      details: error.message
+      details: error.message,
     });
   }
+});
+
+// 4. Fallback 404 Route Handler
+app.use((req, res) => {
+  res.status(404).json({ success: false, error: 'Route not found' });
+});
+
+// 5. Global Error Handling Middleware
+app.use((err, req, res, next) => {
+  console.error('Server Internal Error:', err.stack);
+  res.status(500).json({ success: false, error: 'Internal Server Error' });
 });
 
 app.listen(PORT, () => {

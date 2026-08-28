@@ -1,12 +1,11 @@
-// src/routes/recommendationRoutes.js
 const express = require('express');
 const router = express.Router();
 const recommendationController = require('../controllers/recommendationController');
 
-// GET user recommendations
-router.get('/:userId', recommendationController.getRecommendations);
+// POST http://localhost:3000/api/recommendations/generate
+router.post('/generate', recommendationController.createRecommendations);
 
-// POST trigger new recommendation generation run
-router.post('/generate/:userId', recommendationController.triggerRecommendationGeneration);
+// GET http://localhost:3000/api/recommendations/1
+router.get('/:userId', recommendationController.fetchRecommendations);
 
 module.exports = router;
