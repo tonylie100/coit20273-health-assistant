@@ -18,21 +18,23 @@ type Message = {
   sender: 'user' | 'bot';
 };
 
+const INITIAL_MESSAGE: Message = {
+  id: '1',
+  text: "Hi! I'm your AI Health Assistant. How can I help you today?",
+  sender: 'bot',
+};
 
 export default function ChatbotScreen() {
   const [message, setMessage] = useState('');
   const [isTyping, setIsTyping] = useState(false);
+  const [lastFailedMessage, setLastFailedMessage] = useState<string | null>(
+    null
+  );
 
-  const [messages, setMessages] = useState<Message[]>([
-    {
-      id: '1',
-      text: "Hi! I'm your AI Health Assistant. How can I help you today?",
-      sender: 'bot',
-    },
-  ]);
+  const [messages, setMessages] = useState<Message[]>([INITIAL_MESSAGE]);
 
-  const sendMessage = async () => {
-    const trimmedMessage = message.trim();
+  const sendMessage = async (messageOverride?: string) => {
+    const trimmedMessage = (messageOverride ?? message).trim();
 
     if (!trimmedMessage || isTyping) {
       return;
@@ -51,10 +53,12 @@ export default function ChatbotScreen() {
 
     setMessage('');
     setIsTyping(true);
+    setLastFailedMessage(null);
 
     try {
       const data = await sendChatbotMessage(trimmedMessage);
       const response = data.reply;
+
       const botMessage: Message = {
         id: `${Date.now()}-bot`,
         text: response,
@@ -65,8 +69,12 @@ export default function ChatbotScreen() {
         ...previousMessages,
         botMessage,
       ]);
+
+      setLastFailedMessage(null);
     } catch (error) {
       console.log('Chatbot API error:', error);
+
+      setLastFailedMessage(trimmedMessage);
 
       const fallbackMessage: Message = {
         id: `${Date.now()}-error`,
@@ -84,36 +92,33 @@ export default function ChatbotScreen() {
     }
   };
 
+  const clearChat = () => {
+    setMessages([INITIAL_MESSAGE]);
+    setMessage('');
+    setLastFailedMessage(null);
+  };
+
   return (
     <KeyboardAvoidingView
       style={styles.container}
       behavior={Platform.OS === 'ios' ? 'padding' : undefined}
     >
       <View style={styles.header}>
-  <View style={styles.headerTopRow}>
-    <View>
-      <Text style={styles.headerTitle}>
-        AI Health Assistant
-      </Text>
+        <View style={styles.headerTopRow}>
+          <View>
+            <Text style={styles.headerTitle}>
+              AI Health Assistant
+            </Text>
 
-      <Text style={styles.headerSubtitle}>
-        Your personal health companion
-      </Text>
-    </View>
+            <Text style={styles.headerSubtitle}>
+              Your personal health companion
+            </Text>
+          </View>
 
-    <TouchableOpacity
-      style={styles.clearButton}
-      onPress={() => {
-        setMessages([
-          {
-            id: '1',
-            text: "Hi! I'm your AI Health Assistant. How can I help you today?",
-              sender: 'bot',
-              },
-            ]);
-            setMessage('');
-          }}
-          disabled={isTyping}
+          <TouchableOpacity
+            style={styles.clearButton}
+            onPress={clearChat}
+            disabled={isTyping}
           >
             <Text style={styles.clearButtonText}>
               Clear
@@ -146,6 +151,20 @@ export default function ChatbotScreen() {
             >
               {item.text}
             </Text>
+
+            {item.sender === 'bot' &&
+              lastFailedMessage &&
+              item.id.endsWith('-error') && (
+                <TouchableOpacity
+                  style={styles.retryButton}
+                  onPress={() => sendMessage(lastFailedMessage)}
+                  disabled={isTyping}
+                >
+                  <Text style={styles.retryButtonText}>
+                    Try again
+                  </Text>
+                </TouchableOpacity>
+              )}
           </View>
         )}
         ListFooterComponent={
@@ -181,7 +200,7 @@ export default function ChatbotScreen() {
           multiline
           maxLength={500}
           editable={!isTyping}
-          onSubmitEditing={sendMessage}
+          onSubmitEditing={() => sendMessage()}
         />
 
         <TouchableOpacity
@@ -189,7 +208,7 @@ export default function ChatbotScreen() {
             styles.sendButton,
             isTyping && styles.disabledSendButton,
           ]}
-          onPress={sendMessage}
+          onPress={() => sendMessage()}
           disabled={isTyping}
         >
           <Text style={styles.sendButtonText}>
@@ -213,24 +232,25 @@ const styles = StyleSheet.create({
     paddingBottom: 18,
     backgroundColor: '#2E7D6B',
   },
+
   headerTopRow: {
-  flexDirection: 'row',
-  alignItems: 'center',
-  justifyContent: 'space-between',
-},
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+  },
 
-clearButton: {
-  paddingHorizontal: 12,
-  paddingVertical: 7,
-  borderRadius: 16,
-  backgroundColor: '#FFFFFF',
-},
+  clearButton: {
+    paddingHorizontal: 12,
+    paddingVertical: 7,
+    borderRadius: 16,
+    backgroundColor: '#FFFFFF',
+  },
 
-clearButtonText: {
-  color: '#2E7D6B',
-  fontSize: 13,
-  fontWeight: '600',
-},
+  clearButtonText: {
+    color: '#2E7D6B',
+    fontSize: 13,
+    fontWeight: '600',
+  },
 
   headerTitle: {
     fontSize: 22,
@@ -337,6 +357,21 @@ clearButtonText: {
 
   disabledSendButton: {
     opacity: 0.5,
+  },
+
+  retryButton: {
+    marginTop: 8,
+    alignSelf: 'flex-start',
+    paddingHorizontal: 12,
+    paddingVertical: 6,
+    borderRadius: 14,
+    backgroundColor: '#2E7D6B',
+  },
+
+  retryButtonText: {
+    color: '#FFFFFF',
+    fontSize: 12,
+    fontWeight: '600',
   },
 
   sendButtonText: {
