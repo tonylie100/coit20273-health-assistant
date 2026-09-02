@@ -27,6 +27,15 @@ export default function HomeScreen() {
           Mental Health
         </Text>
       </TouchableOpacity>
+
+      <TouchableOpacity
+        style={styles.button}
+        onPress={() => router.push('/health-data')}
+        >
+        <Text style={styles.buttonText}>
+          Health Data
+        </Text>
+      </TouchableOpacity>
     </View>
   );
 }
