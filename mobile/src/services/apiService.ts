@@ -71,3 +71,35 @@ export async function sendChatbotMessage(message: string) {
 
   return data;
 }
+
+export type HealthDataPayload = {
+  user_id: number;
+  step_count: number;
+  sleep_hours: number | null;
+  heart_rate_avg: number | null;
+  water_intake: number;
+  calories_burned: number;
+};
+
+export async function submitHealthData(data: HealthDataPayload) {
+  const response = await fetch(
+    `${API_BASE_URL}/api/v1/metrics`,
+    {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+      },
+      body: JSON.stringify(data),
+    }
+  );
+
+  if (!response.ok) {
+    const errorText = await response.text();
+
+    throw new Error(
+      `Failed to submit health metrics: ${response.status} ${errorText}`
+    );
+  }
+
+  return response.json();
+}
