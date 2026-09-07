@@ -148,6 +148,13 @@ export default function HomeScreen() {
         </Link>
 
         <Link
+          href="/metrics"
+          style={styles.linkButton}
+        >
+          Add Health Metrics
+        </Link>
+
+        <Link
           href="/dashboard"
           style={styles.linkButton}
         >

@@ -1,3 +1,4 @@
+const verifyToken = require('../middleware/verifyToken');
 const express = require('express');
 
 const router = express.Router();
@@ -20,7 +21,7 @@ Safety rules:
 - Clearly communicate uncertainty when information is not definitive.
 `;
 
-router.post('/message', async (req, res) => {
+router.post('/message', verifyToken, async (req, res) => {
   try {
     const { message } = req.body;
 

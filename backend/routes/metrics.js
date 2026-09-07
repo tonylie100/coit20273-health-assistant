@@ -1,10 +1,12 @@
+
 const express = require('express');
 const router = express.Router();
 const pool = require('../db');
+const verifyToken = require('../middleware/verifyToken');
 
 
 
-router.post('/', async (req, res) => {
+router.post('/', verifyToken, async (req, res) => {
   try {
     const {
       user_id,
