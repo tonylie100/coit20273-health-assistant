@@ -1,11 +1,15 @@
 const express = require('express');
 const router = express.Router();
 const recommendationController = require('../controllers/recommendationController');
+const verifyToken = require('../middleware/verifyToken'); // Sakshi's Firebase authentication
+const safetyGuard = require('../middleware/safetyGuard'); // Safety override middleware
 
-// POST http://localhost:3000/api/recommendations/generate
-router.post('/generate', recommendationController.createRecommendations);
+// POST /api/v1/recommendations/generate
+// Execution Flow: verifyToken (Auth) -> safetyGuard (Physiological Thresholds) -> createRecommendations (RAG + GenAI)
+router.post('/generate', verifyToken, safetyGuard, recommendationController.createRecommendations);
 
-// GET http://localhost:3000/api/recommendations/1
-router.get('/:userId', recommendationController.fetchRecommendations);
+// GET /api/v1/recommendations/:userId
+// Protected by Firebase Auth to prevent BOLA vulnerabilities
+router.get('/:userId', verifyToken, recommendationController.fetchRecommendations);
 
 module.exports = router;
