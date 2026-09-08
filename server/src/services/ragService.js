@@ -1,10 +1,11 @@
 const pool = require('../config/db');
 
 /**
- * Retrieves relevant context embeddings using pgvector cosine distance,
- * with automatic fallback to standard SQL if vector search fails or returns empty.
+ * Retrieves context embeddings via pgvector cosine distance,
+ * with safe error handling to prevent 500 crashes if columns/tables differ.
  */
 async function getUserContext(userId, queryEmbedding, limit = 3) {
+  // 1. Try pgvector similarity query
   try {
     if (queryEmbedding && Array.isArray(queryEmbedding) && queryEmbedding.length > 0) {
       const vectorQuery = `
@@ -25,19 +26,24 @@ async function getUserContext(userId, queryEmbedding, limit = 3) {
       }
     }
   } catch (error) {
-    console.warn('pgvector retrieval fallback triggered:', error.message);
+    console.warn('pgvector retrieval fallback:', error.message);
   }
 
-  // Fallback: Query recent daily metrics if vector embeddings are empty/unconfigured
-  const fallbackQuery = `
-    SELECT record_date, steps, sleep_hours, heart_rate, calories_burned
-    FROM health_metrics
-    WHERE user_id = $1
-    ORDER BY record_date DESC
-    LIMIT $3;
-  `;
-  const fallbackResult = await pool.query(fallbackQuery, [userId, limit]);
-  return fallbackResult.rows;
+  // 2. Safe table fallback: uses SELECT * and orders by primary key 'id'
+  try {
+    const fallbackQuery = `
+      SELECT *
+      FROM health_metrics
+      WHERE user_id = $1
+      ORDER BY id DESC
+      LIMIT $2;
+    `;
+    const fallbackResult = await pool.query(fallbackQuery, [userId, limit]);
+    return fallbackResult.rows;
+  } catch (error) {
+    console.warn('health_metrics query skipped:', error.message);
+    return []; // Return empty context so Gemini execution proceeds cleanly
+  }
 }
 
 module.exports = { getUserContext };
