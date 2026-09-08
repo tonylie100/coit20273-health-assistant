@@ -1,9 +1,14 @@
-import { View, Text, TouchableOpacity, StyleSheet } from 'react-native';
+import { View, Text, TouchableOpacity, StyleSheet, ScrollView } from 'react-native';
 import { router } from 'expo-router';
+import { useState } from 'react';
+
+import TestRecommendationScreen from '../components/TestRecommendationScreen';
 
 export default function HomeScreen() {
+  const [showTest, setShowTest] = useState(false);
+
   return (
-    <View style={styles.container}>
+    <ScrollView contentContainerStyle={styles.container}>
       <Text style={styles.title}>AI Health Assistant</Text>
 
       <Text style={styles.subtitle}>
@@ -31,21 +36,35 @@ export default function HomeScreen() {
       <TouchableOpacity
         style={styles.button}
         onPress={() => router.push('/health-data')}
-        >
+      >
         <Text style={styles.buttonText}>
           Health Data
         </Text>
       </TouchableOpacity>
-    </View>
+
+      <TouchableOpacity
+        style={[styles.button, styles.testButton]}
+        onPress={() => setShowTest(!showTest)}
+      >
+        <Text style={styles.buttonText}>
+          {showTest ? 'Hide API Test' : 'Test Recommendations API'}
+        </Text>
+      </TouchableOpacity>
+
+      {showTest && (
+        <View style={styles.testWrapper}>
+          <TestRecommendationScreen />
+        </View>
+      )}
+    </ScrollView>
   );
 }
 
 const styles = StyleSheet.create({
   container: {
-    flex: 1,
-    justifyContent: 'center',
+    paddingVertical: 50,
+    paddingHorizontal: 20,
     alignItems: 'center',
-    padding: 20,
     backgroundColor: '#F7F9FC',
   },
 
@@ -66,11 +85,23 @@ const styles = StyleSheet.create({
     paddingVertical: 15,
     borderRadius: 10,
     marginVertical: 8,
+    width: '100%',
+    alignItems: 'center',
+  },
+
+  testButton: {
+    backgroundColor: '#3182CE',
+    marginTop: 15,
   },
 
   buttonText: {
     color: '#FFFFFF',
     fontSize: 16,
     fontWeight: 'bold',
+  },
+
+  testWrapper: {
+    width: '100%',
+    marginTop: 20,
   },
 });
