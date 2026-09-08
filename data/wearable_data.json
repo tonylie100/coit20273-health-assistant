@@ -1,0 +1,26 @@
+[
+  {
+    "userId": 2,
+    "recordDate": "2026-08-08",
+    "steps": 8500,
+    "heartRate": 76,
+    "sleepHours": 7.5,
+    "caloriesBurned": 520
+  },
+  {
+    "userId": 2,
+    "recordDate": "2026-08-09",
+    "steps": 10250,
+    "heartRate": 74,
+    "sleepHours": 8.0,
+    "caloriesBurned": 610
+  },
+  {
+    "userId": 2,
+    "recordDate": "2026-08-10",
+    "steps": 7200,
+    "heartRate": 79,
+    "sleepHours": 6.8,
+    "caloriesBurned": 460
+  }
+]
