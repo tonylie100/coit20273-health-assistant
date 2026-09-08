@@ -13,3 +13,27 @@ router.post('/generate', verifyToken, safetyGuard, recommendationController.crea
 router.get('/:userId', verifyToken, recommendationController.fetchRecommendations);
 
 module.exports = router;
+
+const { storeHealthLogEmbedding, findSimilarHealthLogs } = require('../services/embeddingService');
+
+// POST /api/v1/recommendations/embeddings/test
+router.post('/embeddings/test', async (req, res) => {
+  try {
+    const { userId, logText, category } = req.body;
+    
+    // Store log with vector
+    const savedLog = await storeHealthLogEmbedding(userId || 1, logText, category);
+    
+    // Test similarity query
+    const similarLogs = await findSimilarHealthLogs(userId || 1, logText, 3);
+
+    res.status(200).json({
+      success: true,
+      savedLog,
+      similarLogs,
+    });
+  } catch (error) {
+    console.error('Embedding Error:', error);
+    res.status(500).json({ success: false, error: error.message });
+  }
+});
