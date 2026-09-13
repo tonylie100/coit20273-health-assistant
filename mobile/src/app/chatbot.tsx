@@ -1,0 +1,381 @@
+import React, { useState } from 'react';
+import {
+  View,
+  Text,
+  TextInput,
+  TouchableOpacity,
+  StyleSheet,
+  FlatList,
+  KeyboardAvoidingView,
+  Platform,
+} from 'react-native';
+
+import { sendChatbotMessage } from '../services/apiService';
+
+type Message = {
+  id: string;
+  text: string;
+  sender: 'user' | 'bot';
+};
+
+const INITIAL_MESSAGE: Message = {
+  id: '1',
+  text: "Hi! I'm your AI Health Assistant. How can I help you today?",
+  sender: 'bot',
+};
+
+export default function ChatbotScreen() {
+  const [message, setMessage] = useState('');
+  const [isTyping, setIsTyping] = useState(false);
+  const [lastFailedMessage, setLastFailedMessage] = useState<string | null>(
+    null
+  );
+
+  const [messages, setMessages] = useState<Message[]>([INITIAL_MESSAGE]);
+
+  const sendMessage = async (messageOverride?: string) => {
+    const trimmedMessage = (messageOverride ?? message).trim();
+
+    if (!trimmedMessage || isTyping) {
+      return;
+    }
+
+    const userMessage: Message = {
+      id: Date.now().toString(),
+      text: trimmedMessage,
+      sender: 'user',
+    };
+
+    setMessages((previousMessages) => [
+      ...previousMessages,
+      userMessage,
+    ]);
+
+    setMessage('');
+    setIsTyping(true);
+    setLastFailedMessage(null);
+
+    try {
+      const data = await sendChatbotMessage(trimmedMessage);
+      const response = data.reply;
+
+      const botMessage: Message = {
+        id: `${Date.now()}-bot`,
+        text: response,
+        sender: 'bot',
+      };
+
+      setMessages((previousMessages) => [
+        ...previousMessages,
+        botMessage,
+      ]);
+
+      setLastFailedMessage(null);
+    } catch (error) {
+      console.log('Chatbot API error:', error);
+
+      setLastFailedMessage(trimmedMessage);
+
+      const fallbackMessage: Message = {
+        id: `${Date.now()}-error`,
+        text:
+          'The AI service is currently unavailable. Your message was received, but a live Claude response could not be generated. Please try again later.',
+        sender: 'bot',
+      };
+
+      setMessages((previousMessages) => [
+        ...previousMessages,
+        fallbackMessage,
+      ]);
+    } finally {
+      setIsTyping(false);
+    }
+  };
+
+  const clearChat = () => {
+    setMessages([INITIAL_MESSAGE]);
+    setMessage('');
+    setLastFailedMessage(null);
+  };
+
+  return (
+    <KeyboardAvoidingView
+      style={styles.container}
+      behavior={Platform.OS === 'ios' ? 'padding' : undefined}
+    >
+      <View style={styles.header}>
+        <View style={styles.headerTopRow}>
+          <View>
+            <Text style={styles.headerTitle}>
+              AI Health Assistant
+            </Text>
+
+            <Text style={styles.headerSubtitle}>
+              Your personal health companion
+            </Text>
+          </View>
+
+          <TouchableOpacity
+            style={styles.clearButton}
+            onPress={clearChat}
+            disabled={isTyping}
+          >
+            <Text style={styles.clearButtonText}>
+              Clear
+            </Text>
+          </TouchableOpacity>
+        </View>
+      </View>
+
+      <FlatList
+        data={messages}
+        keyExtractor={(item) => item.id}
+        contentContainerStyle={styles.messagesContainer}
+        showsVerticalScrollIndicator={false}
+        renderItem={({ item }) => (
+          <View
+            style={[
+              styles.messageBubble,
+              item.sender === 'user'
+                ? styles.userBubble
+                : styles.botBubble,
+            ]}
+          >
+            <Text
+              style={[
+                styles.messageText,
+                item.sender === 'user'
+                  ? styles.userText
+                  : styles.botText,
+              ]}
+            >
+              {item.text}
+            </Text>
+
+            {item.sender === 'bot' &&
+              lastFailedMessage &&
+              item.id.endsWith('-error') && (
+                <TouchableOpacity
+                  style={styles.retryButton}
+                  onPress={() => sendMessage(lastFailedMessage)}
+                  disabled={isTyping}
+                >
+                  <Text style={styles.retryButtonText}>
+                    Try again
+                  </Text>
+                </TouchableOpacity>
+              )}
+          </View>
+        )}
+        ListFooterComponent={
+          isTyping ? (
+            <View
+              style={[
+                styles.messageBubble,
+                styles.botBubble,
+              ]}
+            >
+              <Text style={styles.typingText}>
+                AI Health Assistant is typing...
+              </Text>
+            </View>
+          ) : null
+        }
+      />
+
+      <View style={styles.disclaimer}>
+        <Text style={styles.disclaimerText}>
+          General wellness information only. This assistant does not
+          provide medical diagnosis or emergency care.
+        </Text>
+      </View>
+
+      <View style={styles.inputContainer}>
+        <TextInput
+          style={styles.input}
+          value={message}
+          onChangeText={setMessage}
+          placeholder="Type your health question..."
+          placeholderTextColor="#888888"
+          multiline
+          maxLength={500}
+          editable={!isTyping}
+          onSubmitEditing={() => sendMessage()}
+        />
+
+        <TouchableOpacity
+          style={[
+            styles.sendButton,
+            isTyping && styles.disabledSendButton,
+          ]}
+          onPress={() => sendMessage()}
+          disabled={isTyping}
+        >
+          <Text style={styles.sendButtonText}>
+            Send
+          </Text>
+        </TouchableOpacity>
+      </View>
+    </KeyboardAvoidingView>
+  );
+}
+
+const styles = StyleSheet.create({
+  container: {
+    flex: 1,
+    backgroundColor: '#F7F9FC',
+  },
+
+  header: {
+    paddingHorizontal: 20,
+    paddingTop: 25,
+    paddingBottom: 18,
+    backgroundColor: '#2E7D6B',
+  },
+
+  headerTopRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+  },
+
+  clearButton: {
+    paddingHorizontal: 12,
+    paddingVertical: 7,
+    borderRadius: 16,
+    backgroundColor: '#FFFFFF',
+  },
+
+  clearButtonText: {
+    color: '#2E7D6B',
+    fontSize: 13,
+    fontWeight: '600',
+  },
+
+  headerTitle: {
+    fontSize: 22,
+    fontWeight: 'bold',
+    color: '#FFFFFF',
+  },
+
+  headerSubtitle: {
+    marginTop: 4,
+    fontSize: 14,
+    color: '#E8F5F1',
+  },
+
+  messagesContainer: {
+    padding: 16,
+    paddingBottom: 12,
+    flexGrow: 1,
+  },
+
+  messageBubble: {
+    maxWidth: '82%',
+    paddingHorizontal: 14,
+    paddingVertical: 12,
+    borderRadius: 16,
+    marginBottom: 10,
+  },
+
+  botBubble: {
+    alignSelf: 'flex-start',
+    backgroundColor: '#FFFFFF',
+    borderBottomLeftRadius: 5,
+  },
+
+  userBubble: {
+    alignSelf: 'flex-end',
+    backgroundColor: '#2E7D6B',
+    borderBottomRightRadius: 5,
+  },
+
+  messageText: {
+    fontSize: 16,
+    lineHeight: 22,
+  },
+
+  botText: {
+    color: '#222222',
+  },
+
+  userText: {
+    color: '#FFFFFF',
+  },
+
+  typingText: {
+    fontSize: 14,
+    color: '#777777',
+    fontStyle: 'italic',
+  },
+
+  disclaimer: {
+    paddingHorizontal: 16,
+    paddingVertical: 7,
+    backgroundColor: '#EEF4F2',
+  },
+
+  disclaimerText: {
+    fontSize: 11,
+    lineHeight: 16,
+    color: '#666666',
+    textAlign: 'center',
+  },
+
+  inputContainer: {
+    flexDirection: 'row',
+    alignItems: 'flex-end',
+    paddingHorizontal: 12,
+    paddingTop: 10,
+    paddingBottom: 12,
+    backgroundColor: '#FFFFFF',
+    borderTopWidth: 1,
+    borderTopColor: '#DDDDDD',
+  },
+
+  input: {
+    flex: 1,
+    minHeight: 45,
+    maxHeight: 100,
+    borderWidth: 1,
+    borderColor: '#CCCCCC',
+    borderRadius: 22,
+    paddingHorizontal: 16,
+    paddingVertical: 10,
+    fontSize: 16,
+    backgroundColor: '#F9F9F9',
+    color: '#222222',
+  },
+
+  sendButton: {
+    marginLeft: 8,
+    backgroundColor: '#2E7D6B',
+    paddingHorizontal: 18,
+    paddingVertical: 13,
+    borderRadius: 22,
+  },
+
+  disabledSendButton: {
+    opacity: 0.5,
+  },
+
+  retryButton: {
+    marginTop: 8,
+    alignSelf: 'flex-start',
+    paddingHorizontal: 12,
+    paddingVertical: 6,
+    borderRadius: 14,
+    backgroundColor: '#2E7D6B',
+  },
+
+  retryButtonText: {
+    color: '#FFFFFF',
+    fontSize: 12,
+    fontWeight: '600',
+  },
+
+  sendButtonText: {
+    color: '#FFFFFF',
+    fontWeight: 'bold',
+  },
+});

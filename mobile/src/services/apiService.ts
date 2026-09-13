@@ -1,0 +1,113 @@
+import { getFirebaseIdToken } from './authService';
+
+const API_BASE_URL =
+  process.env.EXPO_PUBLIC_API_BASE_URL || 'http://localhost:3000';
+
+export async function getRecommendations(userId: string) {
+  const response = await fetch(
+    `${API_BASE_URL}/api/v1/recommendations/${userId}`
+  );
+
+  if (!response.ok) {
+    const errorText = await response.text();
+
+    throw new Error(
+      `Failed to fetch recommendations: ${response.status} ${errorText}`
+    );
+  }
+
+  return response.json();
+}
+
+export async function generateRecommendations(userId: string) {
+  const response = await fetch(
+    `${API_BASE_URL}/generate/${userId}`,
+    {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+      },
+    }
+  );
+
+  if (!response.ok) {
+    const errorText = await response.text();
+
+    throw new Error(
+      `Failed to generate recommendations: ${response.status} ${errorText}`
+    );
+  }
+
+  return response.json();
+}
+
+export async function sendChatbotMessage(message: string) {
+  const token = await getFirebaseIdToken();
+
+  const response = await fetch(
+    `${API_BASE_URL}/api/chatbot/message`,
+    {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        Authorization: `Bearer ${token}`,
+      },
+      body: JSON.stringify({
+        message,
+      }),
+    }
+  );
+
+  if (!response.ok) {
+    const errorText = await response.text();
+
+    throw new Error(
+      `Failed to send chatbot message: ${response.status} ${errorText}`
+    );
+  }
+
+  const data = await response.json();
+
+  if (!data.success) {
+    throw new Error(
+      data.error || 'Chatbot request failed.'
+    );
+  }
+
+  return data;
+}
+
+export type HealthDataPayload = {
+  user_id: number;
+  step_count: number;
+  sleep_hours: number | null;
+  heart_rate_avg: number | null;
+  water_intake: number;
+  calories_burned: number;
+};
+
+export async function submitHealthData(data: HealthDataPayload) {
+  const token = await getFirebaseIdToken();
+
+  const response = await fetch(
+    `${API_BASE_URL}/api/v1/metrics`,
+    {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        Authorization: `Bearer ${token}`,
+      },
+      body: JSON.stringify(data),
+    }
+  );
+
+  if (!response.ok) {
+    const errorText = await response.text();
+
+    throw new Error(
+      `Failed to submit health metrics: ${response.status} ${errorText}`
+    );
+  }
+
+  return response.json();
+}
