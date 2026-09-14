@@ -1,3 +1,5 @@
+import { getFirebaseIdToken } from './authService';
+
 const API_BASE_URL =
   process.env.EXPO_PUBLIC_API_BASE_URL || 'http://localhost:3000';
 
@@ -40,12 +42,15 @@ export async function generateRecommendations(userId: string) {
 }
 
 export async function sendChatbotMessage(message: string) {
+  const token = await getFirebaseIdToken();
+
   const response = await fetch(
     `${API_BASE_URL}/api/chatbot/message`,
     {
       method: 'POST',
       headers: {
         'Content-Type': 'application/json',
+        Authorization: `Bearer ${token}`,
       },
       body: JSON.stringify({
         message,
@@ -82,12 +87,15 @@ export type HealthDataPayload = {
 };
 
 export async function submitHealthData(data: HealthDataPayload) {
+  const token = await getFirebaseIdToken();
+
   const response = await fetch(
     `${API_BASE_URL}/api/v1/metrics`,
     {
       method: 'POST',
       headers: {
         'Content-Type': 'application/json',
+        Authorization: `Bearer ${token}`,
       },
       body: JSON.stringify(data),
     }

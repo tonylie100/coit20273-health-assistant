@@ -32,9 +32,13 @@
           "image": "./assets/images/splash-icon.png",
           "imageWidth": 76
         }
+<<<<<<< HEAD
       ],
       "expo-secure-store",
       "expo-image"
+=======
+      ]
+>>>>>>> origin/main
     ],
     "experiments": {
       "typedRoutes": true,
