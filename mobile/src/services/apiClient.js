@@ -1,7 +1,9 @@
 import axios from 'axios';
 import { getToken } from './authStore';
 
-const API_BASE_URL = process.env.EXPO_PUBLIC_API_URL || 'http://192.168.20.4:5000/api/v1';
+const API_BASE_URL = process.env.EXPO_PUBLIC_API_BASE_URL
+  ? `${process.env.EXPO_PUBLIC_API_BASE_URL}/api/v1`
+  : 'http://192.168.20.5:5000/api/v1';
 
 const apiClient = axios.create({
   baseURL: API_BASE_URL,

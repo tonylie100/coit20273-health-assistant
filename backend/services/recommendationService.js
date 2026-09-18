@@ -1,5 +1,5 @@
 require('dotenv').config();
-const db = require('../config/db');
+const db = require('../db');
 const { GoogleGenerativeAI } = require('@google/generative-ai');
 const { getUserContext } = require('./ragService');
 
