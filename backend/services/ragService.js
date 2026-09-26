@@ -1,4 +1,4 @@
-const pool = require('../config/db');
+const pool = require('../db');
 
 /**
  * Retrieves context embeddings via pgvector cosine distance,
