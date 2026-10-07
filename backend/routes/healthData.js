@@ -7,72 +7,35 @@ router.post('/', async (req, res) => {
   try {
     const {
       userId,
+      user_id,
       recordDate,
+      record_date,
+      created_at,
       steps,
+      step_count,
       heartRate,
+      heart_rate_avg,
       sleepHours,
+      sleep_hours,
       caloriesBurned,
-      waterIntake
+      calories_burned,
+      waterIntake,
+      water_intake
     } = req.body;
 
+    // Normalize field values
+    const finalUserId = userId || user_id;
+    const finalRecordDate = recordDate || record_date || created_at || new Date().toISOString().split('T')[0];
+    const finalSteps = steps ?? step_count ?? 0;
+    const finalHeartRate = heartRate ?? heart_rate_avg ?? null;
+    const finalSleepHours = sleepHours ?? sleep_hours ?? null;
+    const finalCalories = caloriesBurned ?? calories_burned ?? 0;
+    const finalWater = waterIntake ?? water_intake ?? 0;
+
     // Required fields
-    if (!userId || !recordDate) {
+    if (!finalUserId) {
       return res.status(400).json({
-        message: 'userId and recordDate are required'
-      });
-    }
-
-    // Validation
-    if (
-      steps !== undefined &&
-      (!Number.isFinite(Number(steps)) || Number(steps) < 0)
-    ) {
-      return res.status(400).json({
-        message: 'steps must be a non-negative number'
-      });
-    }
-
-    if (
-      heartRate !== undefined &&
-      heartRate !== null &&
-      (!Number.isFinite(Number(heartRate)) || Number(heartRate) <= 0)
-    ) {
-      return res.status(400).json({
-        message: 'heartRate must be a positive number'
-      });
-    }
-
-    if (
-      sleepHours !== undefined &&
-      sleepHours !== null &&
-      (
-        !Number.isFinite(Number(sleepHours)) ||
-        Number(sleepHours) < 0 ||
-        Number(sleepHours) > 24
-      )
-    ) {
-      return res.status(400).json({
-        message: 'sleepHours must be between 0 and 24'
-      });
-    }
-
-    if (
-      caloriesBurned !== undefined &&
-      (!Number.isFinite(Number(caloriesBurned)) ||
-        Number(caloriesBurned) < 0)
-    ) {
-      return res.status(400).json({
-        message: 'caloriesBurned must be a non-negative number'
-      });
-    }
-
-    if (
-      waterIntake !== undefined &&
-      (!Number.isFinite(Number(waterIntake)) ||
-        Number(waterIntake) < 0)
-    ) {
-      return res.status(400).json({
-        message: 'waterIntake must be a non-negative number'
+        message: 'userId is required'
       });
     }
 
@@ -80,9 +43,9 @@ router.post('/', async (req, res) => {
       `INSERT INTO health_data
        (
          user_id,
-         record_date,
+         created_at,
          steps,
-         heart_rate,
+         heart_rate_avg,
          sleep_hours,
          calories_burned,
          water_intake
@@ -90,13 +53,13 @@ router.post('/', async (req, res) => {
        VALUES ($1, $2, $3, $4, $5, $6, $7)
        RETURNING *`,
       [
-        userId,
-        recordDate,
-        steps ?? 0,
-        heartRate ?? null,
-        sleepHours ?? null,
-        caloriesBurned ?? 0,
-        waterIntake ?? 0
+        finalUserId,
+        finalRecordDate,
+        finalSteps,
+        finalHeartRate,
+        finalSleepHours,
+        finalCalories,
+        finalWater
       ]
     );
 
@@ -124,7 +87,7 @@ router.get('/user/:userId', async (req, res) => {
       `SELECT *
        FROM health_data
        WHERE user_id = $1
-       ORDER BY record_date DESC`,
+       ORDER BY created_at DESC`,
       [userId]
     );
 

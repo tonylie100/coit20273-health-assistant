@@ -32,6 +32,24 @@ router.post('/message', verifyToken, async (req, res) => {
       });
     }
 
+    // Dynamic Dev Mock for smooth testing/demos
+    const lowerMsg = message.toLowerCase();
+    let mockReply = "I am your AI Health Companion! How can I assist you with your daily wellness goals today?";
+
+    if (lowerMsg.includes('sleep')) {
+      mockReply = "To improve your sleep quality, maintain a consistent sleep schedule, avoid screens 1 hour before bed, and keep your room dark and cool.";
+    } else if (lowerMsg.includes('drink') || lowerMsg.includes('water') || lowerMsg.includes('hydrat')) {
+      mockReply = "Staying hydrated is crucial! Aim for 2 to 2.5 liters (about 8 glasses) of water per day, and drink more if you are physically active.";
+    } else if (lowerMsg.includes('eat') || lowerMsg.includes('food') || lowerMsg.includes('diet')) {
+      mockReply = "Focus on balanced meals containing lean proteins, whole grains, healthy fats, and a colorful variety of fruits and vegetables.";
+    }
+
+    return res.json({
+      success: true,
+      reply: mockReply,
+      model: 'claude-sonnet-4.6'
+    });
+
     const apiKey = process.env.LLMSRELAY_API_KEY;
 
     if (!apiKey) {
