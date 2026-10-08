@@ -42,14 +42,14 @@ export default function HomeScreen() {
         </Text>
       </TouchableOpacity>
 
-      <TouchableOpacity
+      {/*<TouchableOpacity
         style={[styles.button, styles.testButton]}
         onPress={() => setShowTest(!showTest)}
       >
         <Text style={styles.buttonText}>
           {showTest ? 'Hide API Test' : 'Test Recommendations API'}
         </Text>
-      </TouchableOpacity>
+      </TouchableOpacity>*/}
 
       {showTest && (
         <View style={styles.testWrapper}>

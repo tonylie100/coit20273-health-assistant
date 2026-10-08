@@ -33,13 +33,17 @@ export default function HealthDataScreen() {
     setErrorMessage('');
   };
 
-  const clearForm = () => {
+  const clearFormInputs = () => {
     setUserId('');
     setSteps('');
     setHeartRate('');
     setSleepHours('');
     setWaterIntake('');
     setCaloriesBurned('');
+  };
+
+  const clearForm = () => {
+    clearFormInputs();
     clearMessages();
   };
 
@@ -160,15 +164,15 @@ export default function HealthDataScreen() {
     try {
       const data = await submitHealthData(payload);
 
-      setSuccessMessage(
-        data.message ||
-          'Health data submitted successfully.'
-      );
+      // Clear the text inputs so user can submit fresh data
+      clearFormInputs();
 
+      // Set explicit banner state without resetting success message
       setValidationMessage('');
       setErrorMessage('');
-
-      clearForm();
+      setSuccessMessage(
+        data.message || 'Health data submitted successfully.'
+      );
     } catch (error) {
       console.error(
         'Health data submission error:',
