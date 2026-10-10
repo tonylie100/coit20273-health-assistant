@@ -1,7 +1,7 @@
 import { getFirebaseIdToken } from './authService';
 
 const API_BASE_URL = process.env.EXPO_PUBLIC_API_BASE_URL 
-  || 'http://localhost:5000/api/v1';
+  || 'http://localhost:3000/api/v1';
 
 console.log('ACTIVE API BASE URL:', API_BASE_URL);
 
