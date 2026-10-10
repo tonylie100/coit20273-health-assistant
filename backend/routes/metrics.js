@@ -1,15 +1,27 @@
-
 const express = require('express');
 const router = express.Router();
+
 const pool = require('../db');
 const verifyToken = require('../middleware/verifyToken');
 
+// Helper: find database user from Firebase UID
+const getDatabaseUser = async (firebaseUid) => {
+  const result = await pool.query(
+    `SELECT user_id, full_name, email
+     FROM users
+     WHERE firebase_uid = $1`,
+    [firebaseUid]
+  );
+
+  return result.rows[0];
+};
 
 
+// POST - CREATE DAILY HEALTH METRICS
 router.post('/', verifyToken, async (req, res) => {
   try {
     const {
-      user_id,
+      record_date,
       step_count,
       sleep_hours,
       heart_rate_avg,
@@ -17,24 +29,28 @@ router.post('/', verifyToken, async (req, res) => {
       calories_burned
     } = req.body;
 
-   
-    if (!user_id) {
-      return res.status(400).json({
-        message: 'user_id is required'
+    // Find authenticated database user
+    const user = await getDatabaseUser(req.user.uid);
+
+    if (!user) {
+      return res.status(404).json({
+        success: false,
+        message: 'User account not found'
       });
     }
 
-    
+    // Validation
     if (
       step_count !== undefined &&
-      (!Number.isFinite(Number(step_count)) || Number(step_count) < 0)
+      (!Number.isFinite(Number(step_count)) ||
+        Number(step_count) < 0)
     ) {
       return res.status(400).json({
+        success: false,
         message: 'step_count must be a non-negative number'
       });
     }
 
-    
     if (
       sleep_hours !== undefined &&
       (
@@ -44,24 +60,25 @@ router.post('/', verifyToken, async (req, res) => {
       )
     ) {
       return res.status(400).json({
+        success: false,
         message: 'sleep_hours must be between 0 and 24'
       });
     }
 
-    
     if (
       heart_rate_avg !== undefined &&
+      heart_rate_avg !== null &&
       (
         !Number.isFinite(Number(heart_rate_avg)) ||
         Number(heart_rate_avg) <= 0
       )
     ) {
       return res.status(400).json({
+        success: false,
         message: 'heart_rate_avg must be a positive number'
       });
     }
 
-   
     if (
       water_intake !== undefined &&
       (
@@ -70,10 +87,11 @@ router.post('/', verifyToken, async (req, res) => {
       )
     ) {
       return res.status(400).json({
+        success: false,
         message: 'water_intake must be a non-negative number'
       });
     }
-   
+
     if (
       calories_burned !== undefined &&
       (
@@ -82,9 +100,13 @@ router.post('/', verifyToken, async (req, res) => {
       )
     ) {
       return res.status(400).json({
+        success: false,
         message: 'calories_burned must be a non-negative number'
       });
     }
+
+    // Use supplied date, or today's date if omitted
+    const healthDate = record_date || new Date().toISOString().slice(0, 10);
 
     const result = await pool.query(
       `INSERT INTO health_data
@@ -97,10 +119,11 @@ router.post('/', verifyToken, async (req, res) => {
          calories_burned,
          water_intake
        )
-       VALUES ($1, CURRENT_DATE, $2, $3, $4, $5, $6)
+       VALUES ($1, $2, $3, $4, $5, $6, $7)
        RETURNING *`,
       [
-        user_id,
+        user.user_id,
+        healthDate,
         step_count ?? 0,
         heart_rate_avg ?? null,
         sleep_hours ?? null,
@@ -110,10 +133,12 @@ router.post('/', verifyToken, async (req, res) => {
     );
 
     return res.status(201).json({
-      message: 'Daily health metrics ingested successfully',
+      success: true,
+      message: 'Daily health metrics created successfully',
       metrics: {
         health_data_id: result.rows[0].health_data_id,
-        user_id: result.rows[0].user_id,
+        user_id: user.user_id,
+        user_name: user.full_name,
         record_date: result.rows[0].record_date,
         step_count: result.rows[0].steps,
         sleep_hours: result.rows[0].sleep_hours,
@@ -124,18 +149,19 @@ router.post('/', verifyToken, async (req, res) => {
     });
 
   } catch (error) {
-    console.error('Metrics ingestion error:', error);
+    console.error('Metrics creation error:', error);
 
     return res.status(500).json({
-      message: 'Failed to ingest health metrics',
+      success: false,
+      message: 'Failed to create health metrics',
       error: error.message
     });
   }
 });
 
 
-
-router.put('/:id', async (req, res) => {
+// PUT - UPDATE OWN HEALTH METRICS
+router.put('/:id', verifyToken, async (req, res) => {
   try {
     const { id } = req.params;
 
@@ -147,17 +173,28 @@ router.put('/:id', async (req, res) => {
       calories_burned
     } = req.body;
 
-    
+    // Find authenticated database user
+    const user = await getDatabaseUser(req.user.uid);
+
+    if (!user) {
+      return res.status(404).json({
+        success: false,
+        message: 'User account not found'
+      });
+    }
+
+    // Validation
     if (
       step_count !== undefined &&
-      (!Number.isFinite(Number(step_count)) || Number(step_count) < 0)
+      (!Number.isFinite(Number(step_count)) ||
+        Number(step_count) < 0)
     ) {
       return res.status(400).json({
+        success: false,
         message: 'step_count must be a non-negative number'
       });
     }
 
-    
     if (
       sleep_hours !== undefined &&
       (
@@ -167,23 +204,25 @@ router.put('/:id', async (req, res) => {
       )
     ) {
       return res.status(400).json({
+        success: false,
         message: 'sleep_hours must be between 0 and 24'
       });
     }
 
     if (
       heart_rate_avg !== undefined &&
+      heart_rate_avg !== null &&
       (
         !Number.isFinite(Number(heart_rate_avg)) ||
         Number(heart_rate_avg) <= 0
       )
     ) {
       return res.status(400).json({
+        success: false,
         message: 'heart_rate_avg must be a positive number'
       });
     }
 
-    
     if (
       water_intake !== undefined &&
       (
@@ -192,11 +231,11 @@ router.put('/:id', async (req, res) => {
       )
     ) {
       return res.status(400).json({
+        success: false,
         message: 'water_intake must be a non-negative number'
       });
     }
 
-   
     if (
       calories_burned !== undefined &&
       (
@@ -205,10 +244,17 @@ router.put('/:id', async (req, res) => {
       )
     ) {
       return res.status(400).json({
+        success: false,
         message: 'calories_burned must be a non-negative number'
       });
     }
 
+    // IMPORTANT:
+    // The WHERE clause checks BOTH the record ID
+    // AND the authenticated user's ID.
+    //
+    // This prevents one user from modifying
+    // another user's health record.
     const result = await pool.query(
       `UPDATE health_data
        SET
@@ -218,6 +264,7 @@ router.put('/:id', async (req, res) => {
          water_intake = COALESCE($4, water_intake),
          calories_burned = COALESCE($5, calories_burned)
        WHERE health_data_id = $6
+       AND user_id = $7
        RETURNING *`,
       [
         step_count ?? null,
@@ -225,21 +272,25 @@ router.put('/:id', async (req, res) => {
         heart_rate_avg ?? null,
         water_intake ?? null,
         calories_burned ?? null,
-        id
+        id,
+        user.user_id
       ]
     );
 
     if (result.rows.length === 0) {
       return res.status(404).json({
-        message: 'Health metrics record not found'
+        success: false,
+        message: 'Health metrics record not found or does not belong to this user'
       });
     }
 
     return res.status(200).json({
+      success: true,
       message: 'Health metrics updated successfully',
       metrics: {
         health_data_id: result.rows[0].health_data_id,
         user_id: result.rows[0].user_id,
+        user_name: user.full_name,
         record_date: result.rows[0].record_date,
         step_count: result.rows[0].steps,
         sleep_hours: result.rows[0].sleep_hours,
@@ -253,6 +304,7 @@ router.put('/:id', async (req, res) => {
     console.error('Metrics update error:', error);
 
     return res.status(500).json({
+      success: false,
       message: 'Failed to update health metrics',
       error: error.message
     });
