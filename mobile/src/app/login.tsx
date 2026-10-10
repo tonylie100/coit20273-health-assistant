@@ -1,6 +1,5 @@
-import { useState } from 'react';
+import { useMemo, useState } from 'react';
 import {
-  ActivityIndicator,
   KeyboardAvoidingView,
   Platform,
   Pressable,
@@ -8,517 +7,663 @@ import {
   StyleSheet,
   Text,
   TextInput,
+  useWindowDimensions,
   View,
 } from 'react-native';
 import { router } from 'expo-router';
 import {
-  signInWithEmailAndPassword,
   createUserWithEmailAndPassword,
+  signInWithEmailAndPassword,
 } from 'firebase/auth';
-
 import { auth } from '../config/firebase';
 
-export default function LoginScreen() {
-  const [email, setEmail] = useState('');
-  const [password, setPassword] = useState('');
-  const [loading, setLoading] = useState(false);
-  const [showPassword, setShowPassword] = useState(false);
-  const [focusedField, setFocusedField] = useState<
-    'email' | 'password' | null
-  >(null);
-  const [mode, setMode] = useState<'signin' | 'create'>('signin');
-  const [errorMessage, setErrorMessage] = useState('');
+type Mode = 'signin' | 'signup';
 
-  const clearError = () => {
-    if (errorMessage) {
-      setErrorMessage('');
-    }
-  };
+const C = {
+  navy: '#062B4B',
+  deep: '#0B3D68',
+  blue: '#1769AA',
+  sky: '#2D9CDB',
+  cyan: '#63CEF5',
+  page: '#F4F9FD',
+  white: '#FFFFFF',
+  ink: '#123047',
+  muted: '#718899',
+  soft: '#EAF5FC',
+  border: '#D7E8F2',
+  success: '#25A56B',
+  danger: '#D95C5C',
+};
 
-  const validatePassword = (value: string) => {
-    return (
-      value.length >= 8 &&
-      /[A-Z]/.test(value) &&
-      /[a-z]/.test(value) &&
-      /\d/.test(value) &&
-      /[^A-Za-z0-9]/.test(value)
-    );
-  };
-
-  const validateFields = () => {
-    const trimmedEmail = email.trim();
-
-    if (!trimmedEmail || !password) {
-      setErrorMessage('Please enter your email and password.');
-      return false;
-    }
-
-    if (!trimmedEmail.includes('@')) {
-      setErrorMessage('Please enter a valid email address.');
-      return false;
-    }
-
-    /*
-     * Password complexity is intentionally checked only when
-     * creating a new account.
-     *
-     * Existing Firebase users can still sign in using their
-     * existing password.
-     */
-    if (mode === 'create' && !validatePassword(password)) {
-      setErrorMessage(
-        'Password must be at least 8 characters and include an uppercase letter, lowercase letter, number, and special character.'
-      );
-      return false;
-    }
-
-    return true;
-  };
-
-  const handleSubmit = async () => {
-    clearError();
-
-    if (!validateFields()) {
-      return;
-    }
-
-    try {
-      setLoading(true);
-
-      const trimmedEmail = email.trim();
-
-      if (mode === 'signin') {
-        await signInWithEmailAndPassword(
-          auth,
-          trimmedEmail,
-          password
-        );
-      } else {
-        await createUserWithEmailAndPassword(
-          auth,
-          trimmedEmail,
-          password
-        );
-      }
-
-      router.replace('/');
-    } catch (error: any) {
-      const firebaseCode = error?.code;
-
-      if (
-        firebaseCode === 'auth/invalid-credential' ||
-        firebaseCode === 'auth/wrong-password' ||
-        firebaseCode === 'auth/user-not-found'
-      ) {
-        setErrorMessage(
-          'The email or password is incorrect. Please try again.'
-        );
-      } else if (firebaseCode === 'auth/email-already-in-use') {
-        setErrorMessage(
-          'An account with this email already exists. Try signing in instead.'
-        );
-      } else if (firebaseCode === 'auth/weak-password') {
-        setErrorMessage(
-          'Please choose a stronger password with at least 8 characters, including uppercase, lowercase, number, and special character.'
-        );
-      } else if (firebaseCode === 'auth/invalid-email') {
-        setErrorMessage('Please enter a valid email address.');
-      } else if (firebaseCode === 'auth/network-request-failed') {
-        setErrorMessage(
-          'Network connection failed. Please check your connection and try again.'
-        );
-      } else {
-        setErrorMessage(
-          error?.message || 'Something went wrong. Please try again.'
-        );
-      }
-    } finally {
-      setLoading(false);
-    }
-  };
-
-  const switchMode = (nextMode: 'signin' | 'create') => {
-    if (loading) {
-      return;
-    }
-
-    setMode(nextMode);
-    setErrorMessage('');
-  };
-
+function validatePassword(value: string) {
   return (
-    <KeyboardAvoidingView
-      style={styles.screen}
-      behavior={Platform.OS === 'ios' ? 'padding' : undefined}
-    >
-      <ScrollView
-        contentContainerStyle={styles.scrollContent}
-        keyboardShouldPersistTaps="handled"
-        showsVerticalScrollIndicator={false}
-      >
-        <View style={styles.backgroundGlowOne} />
-        <View style={styles.backgroundGlowTwo} />
-
-        <View style={styles.content}>
-          {/* Brand */}
-          <View style={styles.brandSection}>
-            <View style={styles.brandIcon}>
-              <View style={styles.brandPulse} />
-              <Text style={styles.brandIconText}>♥</Text>
-            </View>
-
-            <Text style={styles.brandName}>AI Health Assistant</Text>
-
-            <Text style={styles.brandTagline}>
-              Your personal wellness companion
-            </Text>
-          </View>
-
-          {/* Product value */}
-          <View style={styles.valueCard}>
-            <View style={styles.valueIcon}>
-              <Text style={styles.valueIconText}>✦</Text>
-            </View>
-
-            <View style={styles.valueCopy}>
-              <Text style={styles.valueTitle}>
-                Understand your health at a glance
-              </Text>
-
-              <Text style={styles.valueDescription}>
-                Track wellness signals, understand trends, and get
-                personalised guidance in one place.
-              </Text>
-            </View>
-          </View>
-
-          {/* Authentication card */}
-          <View style={styles.authCard}>
-            <Text style={styles.heading}>
-              {mode === 'signin'
-                ? 'Welcome back'
-                : 'Create your account'}
-            </Text>
-
-            <Text style={styles.subheading}>
-              {mode === 'signin'
-                ? 'Sign in to continue your wellness journey.'
-                : 'Set up your account to start your wellness journey.'}
-            </Text>
-
-            {/* Mode switch */}
-            <View style={styles.modeSwitcher}>
-              <Pressable
-                onPress={() => switchMode('signin')}
-                style={[
-                  styles.modeButton,
-                  mode === 'signin' && styles.modeButtonActive,
-                ]}
-              >
-                <Text
-                  style={[
-                    styles.modeButtonText,
-                    mode === 'signin' &&
-                      styles.modeButtonTextActive,
-                  ]}
-                >
-                  Sign In
-                </Text>
-              </Pressable>
-
-              <Pressable
-                onPress={() => switchMode('create')}
-                style={[
-                  styles.modeButton,
-                  mode === 'create' && styles.modeButtonActive,
-                ]}
-              >
-                <Text
-                  style={[
-                    styles.modeButtonText,
-                    mode === 'create' &&
-                      styles.modeButtonTextActive,
-                  ]}
-                >
-                  Create Account
-                </Text>
-              </Pressable>
-            </View>
-
-            {/* Email */}
-            <View style={styles.fieldGroup}>
-              <Text style={styles.label}>Email address</Text>
-
-              <View
-                style={[
-                  styles.inputWrapper,
-                  focusedField === 'email' &&
-                    styles.inputWrapperFocused,
-                ]}
-              >
-                <View style={styles.inputIcon}>
-                  <Text style={styles.inputIconText}>@</Text>
-                </View>
-
-                <TextInput
-                  style={styles.input}
-                  placeholder="you@example.com"
-                  placeholderTextColor="#98A7A2"
-                  value={email}
-                  onChangeText={(value) => {
-                    setEmail(value);
-                    clearError();
-                  }}
-                  onFocus={() => setFocusedField('email')}
-                  onBlur={() => setFocusedField(null)}
-                  autoCapitalize="none"
-                  autoCorrect={false}
-                  keyboardType="email-address"
-                  editable={!loading}
-                  returnKeyType="next"
-                  textContentType="emailAddress"
-                />
-              </View>
-            </View>
-
-            {/* Password */}
-            <View style={styles.fieldGroup}>
-              <View style={styles.labelRow}>
-                <Text style={styles.label}>Password</Text>
-
-                {mode === 'create' && (
-                  <Text style={styles.passwordHint}>
-                    8+ chars • A-Z • a-z • 0-9 • symbol
-                  </Text>
-                )}
-              </View>
-
-              <View
-                style={[
-                  styles.inputWrapper,
-                  focusedField === 'password' &&
-                    styles.inputWrapperFocused,
-                ]}
-              >
-                <View style={styles.inputIcon}>
-                  <Text style={styles.lockIcon}>⌑</Text>
-                </View>
-
-                <TextInput
-                  style={styles.input}
-                  placeholder="Enter your password"
-                  placeholderTextColor="#98A7A2"
-                  value={password}
-                  onChangeText={(value) => {
-                    setPassword(value);
-                    clearError();
-                  }}
-                  onFocus={() => setFocusedField('password')}
-                  onBlur={() => setFocusedField(null)}
-                  secureTextEntry={!showPassword}
-                  autoCapitalize="none"
-                  autoCorrect={false}
-                  editable={!loading}
-                  returnKeyType="done"
-                  onSubmitEditing={handleSubmit}
-                  textContentType="password"
-                />
-
-                <Pressable
-                  style={styles.visibilityButton}
-                  onPress={() =>
-                    setShowPassword((current) => !current)
-                  }
-                  disabled={loading}
-                  hitSlop={8}
-                >
-                  <Text style={styles.visibilityText}>
-                    {showPassword ? 'Hide' : 'Show'}
-                  </Text>
-                </Pressable>
-              </View>
-            </View>
-
-            {/* Password requirements */}
-            {mode === 'create' && password.length > 0 && (
-              <View style={styles.passwordRequirements}>
-                <PasswordRequirement
-                  label="8 or more characters"
-                  valid={password.length >= 8}
-                />
-
-                <PasswordRequirement
-                  label="Uppercase letter"
-                  valid={/[A-Z]/.test(password)}
-                />
-
-                <PasswordRequirement
-                  label="Lowercase letter"
-                  valid={/[a-z]/.test(password)}
-                />
-
-                <PasswordRequirement
-                  label="Number"
-                  valid={/\d/.test(password)}
-                />
-
-                <PasswordRequirement
-                  label="Special character"
-                  valid={/[^A-Za-z0-9]/.test(password)}
-                />
-              </View>
-            )}
-
-            {/* Error */}
-            {errorMessage ? (
-              <View style={styles.errorBox}>
-                <View style={styles.errorIcon}>
-                  <Text style={styles.errorIconText}>!</Text>
-                </View>
-
-                <Text style={styles.errorText}>
-                  {errorMessage}
-                </Text>
-              </View>
-            ) : null}
-
-            {/* Submit */}
-            <Pressable
-              style={({ pressed }) => [
-                styles.primaryButton,
-                pressed &&
-                  !loading &&
-                  styles.primaryButtonPressed,
-                loading && styles.primaryButtonDisabled,
-              ]}
-              onPress={handleSubmit}
-              disabled={loading}
-            >
-              {loading ? (
-                <>
-                  <ActivityIndicator
-                    size="small"
-                    color="#FFFFFF"
-                  />
-
-                  <Text style={styles.primaryButtonText}>
-                    {mode === 'signin'
-                      ? 'Signing in...'
-                      : 'Creating account...'}
-                  </Text>
-                </>
-              ) : (
-                <Text style={styles.primaryButtonText}>
-                  {mode === 'signin'
-                    ? 'Sign In'
-                    : 'Create Account'}
-                </Text>
-              )}
-            </Pressable>
-
-            {/* Supporting text */}
-            <View style={styles.secureRow}>
-              <View style={styles.secureDot} />
-
-              <Text style={styles.secureText}>
-                Your account is protected with Firebase
-                authentication.
-              </Text>
-            </View>
-          </View>
-
-          {/* Product features */}
-          <View style={styles.featureRow}>
-            <FeatureItem
-              icon="♥"
-              title="Wellness"
-              description="Daily insights"
-            />
-
-            <View style={styles.featureDivider} />
-
-            <FeatureItem
-              icon="◷"
-              title="Live"
-              description="Health signals"
-            />
-
-            <View style={styles.featureDivider} />
-
-            <FeatureItem
-              icon="✦"
-              title="AI"
-              description="Personal guidance"
-            />
-          </View>
-
-          <Text style={styles.footerText}>
-            AI Health Assistant provides wellness support and does
-            not replace professional medical advice.
-          </Text>
-        </View>
-      </ScrollView>
-    </KeyboardAvoidingView>
+    value.length >= 8 &&
+    /[A-Z]/.test(value) &&
+    /[a-z]/.test(value) &&
+    /\d/.test(value) &&
+    /[^A-Za-z0-9]/.test(value)
   );
 }
 
-function PasswordRequirement({
+function firebaseMessage(error: any) {
+  switch (error?.code) {
+    case 'auth/invalid-credential':
+    case 'auth/wrong-password':
+    case 'auth/user-not-found':
+      return 'The email or password is incorrect. Please check your details and try again.';
+    case 'auth/email-already-in-use':
+      return 'An account already exists with this email. Try signing in instead.';
+    case 'auth/invalid-email':
+      return 'Please enter a valid email address.';
+    case 'auth/weak-password':
+      return 'Please choose a stronger password.';
+    case 'auth/too-many-requests':
+      return 'Too many attempts. Please wait a moment and try again.';
+    case 'auth/network-request-failed':
+      return 'A network connection is required. Please check your connection.';
+    default:
+      return error?.message || 'Something went wrong. Please try again.';
+  }
+}
+
+function HeartLogo({ small = false }: { small?: boolean }) {
+  return (
+    <View style={[styles.logoHalo, small && styles.logoHaloSmall]}>
+      <View style={[styles.logoRing, small && styles.logoRingSmall]}>
+        <View style={[styles.logoCore, small && styles.logoCoreSmall]}>
+          <Text style={[styles.logoHeart, small && styles.logoHeartSmall]}>♥</Text>
+        </View>
+      </View>
+      <View style={styles.logoPulseDot} />
+    </View>
+  );
+}
+
+function PulseLine() {
+  return (
+    <View style={styles.pulse}>
+      <View style={styles.pulseFlat} />
+      <View style={styles.pulseRise} />
+      <View style={styles.pulsePeak} />
+      <View style={styles.pulseFall} />
+      <View style={styles.pulseFlatRight} />
+    </View>
+  );
+}
+
+function Veins() {
+  return (
+    <View pointerEvents="none" style={styles.veins}>
+      <View style={styles.veinMain} />
+      <View style={styles.veinA} />
+      <View style={styles.veinB} />
+      <View style={styles.veinC} />
+      <View style={styles.veinD} />
+      <View style={styles.veinDotA} />
+      <View style={styles.veinDotB} />
+    </View>
+  );
+}
+
+function StepsIcon() {
+  return (
+    <View style={styles.stepsIcon}>
+      <View style={styles.stepOne} />
+      <View style={styles.stepTwo} />
+    </View>
+  );
+}
+
+function Field({
   label,
-  valid,
+  value,
+  placeholder,
+  onChangeText,
+  password,
+  visible,
+  onToggle,
+  error,
+  disabled,
 }: {
   label: string;
-  valid: boolean;
+  value: string;
+  placeholder: string;
+  onChangeText: (value: string) => void;
+  password?: boolean;
+  visible?: boolean;
+  onToggle?: () => void;
+  error?: boolean;
+  disabled?: boolean;
 }) {
+  const [focused, setFocused] = useState(false);
+
   return (
-    <View style={styles.requirement}>
+    <View style={styles.field}>
+      <Text style={styles.fieldLabel}>{label}</Text>
+
       <View
         style={[
-          styles.requirementIndicator,
-          valid && styles.requirementIndicatorValid,
+          styles.inputShell,
+          focused && styles.inputFocused,
+          error && styles.inputError,
+          disabled && styles.inputDisabled,
         ]}
       >
-        <Text
-          style={[
-            styles.requirementIndicatorText,
-            valid && styles.requirementIndicatorTextValid,
-          ]}
-        >
-          {valid ? '✓' : '•'}
+        <View style={[styles.fieldIcon, focused && styles.fieldIconFocused]}>
+          <Text style={styles.fieldIconText}>{password ? '♥' : '@'}</Text>
+        </View>
+
+        <TextInput
+          style={styles.input}
+          value={value}
+          placeholder={placeholder}
+          placeholderTextColor="#9AAEBA"
+          onChangeText={onChangeText}
+          secureTextEntry={password && !visible}
+          keyboardType={password ? 'default' : 'email-address'}
+          autoComplete={password ? 'password' : 'email'}
+          autoCapitalize="none"
+          autoCorrect={false}
+          editable={!disabled}
+          selectionColor={C.blue}
+          onFocus={() => setFocused(true)}
+          onBlur={() => setFocused(false)}
+        />
+
+        {password && onToggle ? (
+          <Pressable
+            style={styles.showButton}
+            onPress={onToggle}
+            accessibilityRole="button"
+            accessibilityLabel={visible ? 'Hide password' : 'Show password'}
+          >
+            <Text style={styles.showText}>{visible ? 'Hide' : 'Show'}</Text>
+          </Pressable>
+        ) : null}
+      </View>
+    </View>
+  );
+}
+
+function Requirement({ ok, children }: { ok: boolean; children: string }) {
+  return (
+    <View style={styles.requirement}>
+      <View style={[styles.requirementDot, ok && styles.requirementDotOk]}>
+        <Text style={[styles.requirementMark, ok && styles.requirementMarkOk]}>
+          {ok ? '✓' : '•'}
         </Text>
       </View>
-
-      <Text
-        style={[
-          styles.requirementText,
-          valid && styles.requirementTextValid,
-        ]}
-      >
-        {label}
+      <Text style={[styles.requirementText, ok && styles.requirementTextOk]}>
+        {children}
       </Text>
     </View>
   );
 }
 
-function FeatureItem({
+function Feature({
   icon,
   title,
-  description,
+  text,
 }: {
-  icon: string;
+  icon: React.ReactNode;
   title: string;
-  description: string;
+  text: string;
 }) {
   return (
-    <View style={styles.featureItem}>
-      <View style={styles.featureIcon}>
-        <Text style={styles.featureIconText}>{icon}</Text>
+    <View style={styles.feature}>
+      <View style={styles.featureIcon}>{icon}</View>
+      <View style={styles.featureCopy}>
+        <Text style={styles.featureTitle}>{title}</Text>
+        <Text style={styles.featureText}>{text}</Text>
+      </View>
+    </View>
+  );
+}
+
+export default function LoginScreen() {
+  const { width } = useWindowDimensions();
+  const wide = width >= 900;
+
+  const [mode, setMode] = useState<Mode>('signin');
+  const [email, setEmail] = useState('');
+  const [password, setPassword] = useState('');
+  const [confirmPassword, setConfirmPassword] = useState('');
+  const [showPassword, setShowPassword] = useState(false);
+  const [showConfirm, setShowConfirm] = useState(false);
+  const [terms, setTerms] = useState(false);
+  const [loading, setLoading] = useState(false);
+  const [error, setError] = useState('');
+
+  const signIn = mode === 'signin';
+
+  const rules = useMemo(
+    () => ({
+      length: password.length >= 8,
+      upper: /[A-Z]/.test(password),
+      lower: /[a-z]/.test(password),
+      number: /\d/.test(password),
+      symbol: /[^A-Za-z0-9]/.test(password),
+    }),
+    [password],
+  );
+
+  const strong = validatePassword(password);
+  const match = confirmPassword.length > 0 && password === confirmPassword;
+
+  const changeMode = (next: Mode) => {
+    if (loading) return;
+    setMode(next);
+    setError('');
+    setPassword('');
+    setConfirmPassword('');
+    setTerms(false);
+    setShowPassword(false);
+    setShowConfirm(false);
+  };
+
+  const submit = async () => {
+    setError('');
+
+    if (!email.trim() || !password) {
+      setError('Please enter your email address and password.');
+      return;
+    }
+
+    if (!signIn) {
+      if (!strong) {
+        setError('Please meet all password security requirements.');
+        return;
+      }
+
+      if (!confirmPassword) {
+        setError('Please confirm your password.');
+        return;
+      }
+
+      if (password !== confirmPassword) {
+        setError('The passwords do not match.');
+        return;
+      }
+
+      if (!terms) {
+        setError('Please acknowledge the wellness and privacy notice.');
+        return;
+      }
+    }
+
+    try {
+      setLoading(true);
+
+      if (signIn) {
+        await signInWithEmailAndPassword(auth, email.trim(), password);
+      } else {
+        await createUserWithEmailAndPassword(auth, email.trim(), password);
+      }
+
+      router.replace('/');
+    } catch (err: any) {
+      setError(firebaseMessage(err));
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  const form = (
+    <View style={styles.authCard}>
+      <View style={styles.cardAccent} />
+
+      <View style={styles.formHeader}>
+        <View style={styles.eyebrow}>
+          <View style={styles.eyebrowHeart}>
+            <Text style={styles.eyebrowHeartText}>♥</Text>
+          </View>
+          <Text style={styles.eyebrowText}>SECURE WELLNESS ACCESS</Text>
+        </View>
+
+        <Text style={styles.formTitle}>
+          {signIn ? 'Welcome back' : 'Create your account'}
+        </Text>
+
+        <Text style={styles.formSubtitle}>
+          {signIn
+            ? 'Continue your personal wellness journey with a clearer view of your everyday health.'
+            : 'Create your personal wellness space and start building a clearer picture of your everyday health.'}
+        </Text>
       </View>
 
-      <Text style={styles.featureTitle}>{title}</Text>
+      <View style={styles.modeSwitch}>
+        <Pressable
+          onPress={() => changeMode('signin')}
+          style={[styles.modeButton, signIn && styles.modeButtonActive]}
+          accessibilityRole="button"
+          accessibilityState={{ selected: signIn }}
+        >
+          <Text style={[styles.modeText, signIn && styles.modeTextActive]}>
+            Sign in
+          </Text>
+        </Pressable>
 
-      <Text style={styles.featureDescription}>
-        {description}
+        <Pressable
+          onPress={() => changeMode('signup')}
+          style={[styles.modeButton, !signIn && styles.modeButtonActive]}
+          accessibilityRole="button"
+          accessibilityState={{ selected: !signIn }}
+        >
+          <Text style={[styles.modeText, !signIn && styles.modeTextActive]}>
+            Create account
+          </Text>
+        </Pressable>
+      </View>
+
+      <Field
+        label="Email address"
+        value={email}
+        placeholder="you@example.com"
+        onChangeText={setEmail}
+        error={!!error}
+        disabled={loading}
+      />
+
+      <Field
+        label="Password"
+        value={password}
+        placeholder={signIn ? 'Enter your password' : 'Create a strong password'}
+        onChangeText={setPassword}
+        password
+        visible={showPassword}
+        onToggle={() => setShowPassword((v) => !v)}
+        error={!!error}
+        disabled={loading}
+      />
+
+      {!signIn ? (
+        <>
+          <View style={styles.passwordCard}>
+            <View style={styles.passwordHeader}>
+              <Text style={styles.passwordTitle}>Password security</Text>
+              {strong ? (
+                <View style={styles.strongBadge}>
+                  <Text style={styles.strongBadgeText}>STRONG</Text>
+                </View>
+              ) : null}
+            </View>
+
+            <Requirement ok={rules.length}>At least 8 characters</Requirement>
+            <Requirement ok={rules.upper && rules.lower}>
+              Uppercase and lowercase letters
+            </Requirement>
+            <Requirement ok={rules.number}>At least one number</Requirement>
+            <Requirement ok={rules.symbol}>At least one special character</Requirement>
+          </View>
+
+          <Field
+            label="Confirm password"
+            value={confirmPassword}
+            placeholder="Enter your password again"
+            onChangeText={setConfirmPassword}
+            password
+            visible={showConfirm}
+            onToggle={() => setShowConfirm((v) => !v)}
+            error={confirmPassword.length > 0 && !match}
+            disabled={loading}
+          />
+
+          {confirmPassword.length > 0 ? (
+            <View style={styles.matchRow}>
+              <View style={[styles.matchDot, match ? styles.matchGood : styles.matchBad]} />
+              <Text style={[styles.matchText, match ? styles.matchTextGood : styles.matchTextBad]}>
+                {match ? 'Passwords match' : 'Passwords do not match'}
+              </Text>
+            </View>
+          ) : null}
+
+          <Pressable
+            onPress={() => setTerms((v) => !v)}
+            style={styles.termsRow}
+            accessibilityRole="checkbox"
+            accessibilityState={{ checked: terms }}
+          >
+            <View style={[styles.checkbox, terms && styles.checkboxChecked]}>
+              {terms ? <Text style={styles.checkboxText}>✓</Text> : null}
+            </View>
+
+            <Text style={styles.termsText}>
+              I understand that AI Health Assistant provides wellness support,
+              personalises my experience using account data, and does not
+              replace professional medical care.
+            </Text>
+          </Pressable>
+        </>
+      ) : null}
+
+      {error ? (
+        <View style={styles.errorBox}>
+          <View style={styles.errorIcon}>
+            <Text style={styles.errorIconText}>!</Text>
+          </View>
+          <Text style={styles.errorText}>{error}</Text>
+        </View>
+      ) : null}
+
+      <Pressable
+        onPress={submit}
+        disabled={loading}
+        style={({ pressed }) => [
+          styles.primaryButton,
+          pressed && !loading && styles.primaryPressed,
+          loading && styles.primaryDisabled,
+        ]}
+        accessibilityRole="button"
+        accessibilityLabel={signIn ? 'Sign in' : 'Create account'}
+      >
+        <View style={styles.primaryContent}>
+          <View style={styles.primaryHeart}>
+            <Text style={styles.primaryHeartText}>♥</Text>
+          </View>
+
+          <Text style={styles.primaryText}>
+            {loading
+              ? 'Please wait…'
+              : signIn
+                ? 'Sign in to your account'
+                : 'Create my account'}
+          </Text>
+
+          {!loading ? <Text style={styles.primaryArrow}>→</Text> : null}
+        </View>
+      </Pressable>
+
+      <View style={styles.securityRow}>
+        <View style={styles.securityBadge}>
+          <Text style={styles.securityCheck}>✓</Text>
+        </View>
+
+        <View>
+          <Text style={styles.securityTitle}>Secure account access</Text>
+          <Text style={styles.securityText}>Protected with Firebase Authentication</Text>
+        </View>
+      </View>
+
+      <View style={styles.dividerRow}>
+        <View style={styles.divider} />
+        <Text style={styles.dividerText}>WELLNESS AT A GLANCE</Text>
+        <View style={styles.divider} />
+      </View>
+
+      <View style={styles.healthStrip}>
+        <View style={styles.healthItem}>
+          <View style={styles.healthIcon}>
+            <Text style={styles.healthHeart}>♥</Text>
+          </View>
+          <Text style={styles.healthValue}>HEART</Text>
+          <Text style={styles.healthLabel}>signals</Text>
+        </View>
+
+        <View style={styles.healthDivider} />
+
+        <View style={styles.healthItem}>
+          <View style={styles.healthIcon}>
+            <StepsIcon />
+          </View>
+          <Text style={styles.healthValue}>STEPS</Text>
+          <Text style={styles.healthLabel}>activity</Text>
+        </View>
+
+        <View style={styles.healthDivider} />
+
+        <View style={styles.healthItem}>
+          <View style={styles.healthIcon}>
+            <Text style={styles.healthAi}>✦</Text>
+          </View>
+          <Text style={styles.healthValue}>AI</Text>
+          <Text style={styles.healthLabel}>insights</Text>
+        </View>
+      </View>
+
+      <Text style={styles.disclaimer}>
+        AI Health Assistant supports general wellness awareness and does not
+        provide medical diagnosis or replace professional medical advice.
       </Text>
+    </View>
+  );
+
+  return (
+    <View style={styles.screen}>
+      <View style={styles.pageOrbOne} />
+      <View style={styles.pageOrbTwo} />
+      <View style={styles.pageRing} />
+
+      <KeyboardAvoidingView
+        style={styles.keyboard}
+        behavior={Platform.OS === 'ios' ? 'padding' : undefined}
+      >
+        <ScrollView
+          contentContainerStyle={[styles.scroll, wide && styles.scrollWide]}
+          keyboardShouldPersistTaps="handled"
+          showsVerticalScrollIndicator={false}
+        >
+          {wide ? (
+            <View style={styles.desktopShell}>
+              <View style={styles.hero}>
+                <Veins />
+
+                <View style={styles.heroGlow} />
+                <View style={styles.heroGlowSmall} />
+
+                <View style={styles.brandRow}>
+                  <HeartLogo small />
+
+                  <View>
+                    <Text style={styles.brandName}>AI Health Assistant</Text>
+                    <Text style={styles.brandSub}>
+                      Personal wellness, intelligently connected
+                    </Text>
+                  </View>
+                </View>
+
+                <View style={styles.heroContent}>
+                  <View style={styles.kickerRow}>
+                    <View style={styles.kickerDot} />
+                    <Text style={styles.kicker}>AI-POWERED WELLNESS</Text>
+                  </View>
+
+                  <Text style={styles.heroTitle}>
+                    Your health,
+                    {'\n'}
+                    <Text style={styles.heroAccent}>beautifully connected.</Text>
+                  </Text>
+
+                  <PulseLine />
+
+                  <Text style={styles.heroDescription}>
+                    Bring your daily health signals, habits and intelligent
+                    guidance together in one calm, easy-to-understand wellness
+                    experience.
+                  </Text>
+
+                  <View style={styles.featureList}>
+                    <Feature
+                      icon={<Text style={styles.featureSymbol}>♥</Text>}
+                      title="Understand your wellness"
+                      text="See activity, sleep, hydration and recovery together."
+                    />
+
+                    <Feature
+                      icon={<StepsIcon />}
+                      title="Follow everyday activity"
+                      text="Keep movement and wellness goals visible at a glance."
+                    />
+
+                    <Feature
+                      icon={<Text style={styles.featureSymbol}>✦</Text>}
+                      title="Personal AI guidance"
+                      text="Ask questions using your latest wellness context."
+                    />
+                  </View>
+                </View>
+
+                <View style={styles.heroFooter}>
+                  <View style={styles.footerPulse}>
+                    <View style={styles.footerPulseDot} />
+                  </View>
+
+                  <View style={{ flex: 1 }}>
+                    <Text style={styles.footerTitle}>Wellness, not diagnosis</Text>
+                    <Text style={styles.footerText}>
+                      Designed for everyday health awareness.
+                    </Text>
+                  </View>
+                </View>
+              </View>
+
+              <View style={styles.formPanel}>{form}</View>
+            </View>
+          ) : (
+            <View style={styles.mobile}>
+              <View style={styles.mobileBrand}>
+                <HeartLogo small />
+
+                <View style={{ flex: 1 }}>
+                  <Text style={styles.mobileBrandName}>AI Health Assistant</Text>
+                  <Text style={styles.mobileBrandSub}>
+                    Your personal wellness companion
+                  </Text>
+                </View>
+              </View>
+
+              <View style={styles.mobileHero}>
+                <Veins />
+
+                <View style={styles.mobileKicker}>
+                  <View style={styles.kickerDot} />
+                  <Text style={styles.mobileKickerText}>AI-POWERED WELLNESS</Text>
+                </View>
+
+                <Text style={styles.mobileHeroTitle}>
+                  Your health,
+                  {'\n'}
+                  beautifully connected.
+                </Text>
+
+                <PulseLine />
+
+                <Text style={styles.mobileHeroText}>
+                  Wellness signals, personal insights and supportive AI guidance
+                  in one calm space.
+                </Text>
+
+                <View style={styles.mobileHealthRow}>
+                  <Text style={styles.mobileHealthItem}>♥ Heart</Text>
+                  <Text style={styles.mobileHealthItem}>• Steps</Text>
+                  <Text style={styles.mobileHealthItem}>✦ AI</Text>
+                </View>
+              </View>
+
+              {form}
+            </View>
+          )}
+        </ScrollView>
+      </KeyboardAvoidingView>
     </View>
   );
 }
@@ -526,501 +671,1153 @@ function FeatureItem({
 const styles = StyleSheet.create({
   screen: {
     flex: 1,
-    backgroundColor: '#F3F8F6',
+    backgroundColor: C.page,
+    overflow: 'hidden',
   },
 
-  scrollContent: {
-    flexGrow: 1,
-    paddingHorizontal: 22,
-    paddingVertical: 28,
-  },
-
-  content: {
-    width: '100%',
-    maxWidth: 520,
-    alignSelf: 'center',
-    position: 'relative',
-  },
-
-  backgroundGlowOne: {
-    position: 'absolute',
-    width: 220,
-    height: 220,
-    borderRadius: 110,
-    backgroundColor: '#DCEFE8',
-    opacity: 0.65,
-    top: -90,
-    right: -100,
-  },
-
-  backgroundGlowTwo: {
-    position: 'absolute',
-    width: 180,
-    height: 180,
-    borderRadius: 90,
-    backgroundColor: '#E7F3EF',
-    opacity: 0.8,
-    bottom: 100,
-    left: -110,
-  },
-
-  brandSection: {
-    alignItems: 'center',
-    paddingTop: 12,
-    marginBottom: 24,
-  },
-
-  brandIcon: {
-    width: 66,
-    height: 66,
-    borderRadius: 22,
-    backgroundColor: '#247A68',
-    alignItems: 'center',
-    justifyContent: 'center',
-    marginBottom: 15,
-    shadowColor: '#1D6B5B',
-    shadowOpacity: 0.18,
-    shadowRadius: 18,
-    shadowOffset: {
-      width: 0,
-      height: 8,
-    },
-    elevation: 5,
-    position: 'relative',
-  },
-
-  brandPulse: {
-    position: 'absolute',
-    width: 48,
-    height: 48,
-    borderRadius: 24,
-    borderWidth: 1,
-    borderColor: '#FFFFFF',
-    opacity: 0.2,
-  },
-
-  brandIconText: {
-    color: '#FFFFFF',
-    fontSize: 27,
-    fontWeight: '700',
-  },
-
-  brandName: {
-    color: '#173A33',
-    fontSize: 27,
-    fontWeight: '800',
-    letterSpacing: -0.7,
-  },
-
-  brandTagline: {
-    color: '#6B7E78',
-    fontSize: 14,
-    marginTop: 6,
-    fontWeight: '500',
-  },
-
-  valueCard: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    backgroundColor: '#E8F4EF',
-    borderWidth: 1,
-    borderColor: '#D5E9E1',
-    borderRadius: 18,
-    padding: 15,
-    marginBottom: 16,
-  },
-
-  valueIcon: {
-    width: 42,
-    height: 42,
-    borderRadius: 14,
-    backgroundColor: '#FFFFFF',
-    alignItems: 'center',
-    justifyContent: 'center',
-    marginRight: 12,
-  },
-
-  valueIconText: {
-    color: '#247A68',
-    fontSize: 21,
-    fontWeight: '800',
-  },
-
-  valueCopy: {
+  keyboard: {
     flex: 1,
   },
 
-  valueTitle: {
-    color: '#23463E',
-    fontSize: 14,
-    fontWeight: '800',
-    marginBottom: 3,
+  scroll: {
+    flexGrow: 1,
+    justifyContent: 'center',
+    paddingHorizontal: 18,
+    paddingVertical: 24,
   },
 
-  valueDescription: {
-    color: '#668078',
-    fontSize: 12,
-    lineHeight: 18,
+  scrollWide: {
+    paddingHorizontal: 36,
+    paddingVertical: 34,
   },
 
-  authCard: {
-    backgroundColor: '#FFFFFF',
-    borderRadius: 24,
-    padding: 22,
+  pageOrbOne: {
+    position: 'absolute',
+    width: 440,
+    height: 440,
+    borderRadius: 220,
+    backgroundColor: '#DDEFFA',
+    top: -240,
+    right: -130,
+    opacity: 0.75,
+  },
+
+  pageOrbTwo: {
+    position: 'absolute',
+    width: 340,
+    height: 340,
+    borderRadius: 170,
+    backgroundColor: '#E7F4FB',
+    bottom: -190,
+    left: -140,
+  },
+
+  pageRing: {
+    position: 'absolute',
+    width: 570,
+    height: 570,
+    borderRadius: 285,
     borderWidth: 1,
-    borderColor: '#E3ECE9',
-    shadowColor: '#183E35',
-    shadowOpacity: 0.08,
-    shadowRadius: 24,
-    shadowOffset: {
-      width: 0,
-      height: 10,
-    },
-    elevation: 4,
+    borderColor: '#D8EAF4',
+    top: '20%',
+    left: '34%',
+    opacity: 0.65,
   },
 
-  heading: {
-    color: '#183A33',
-    fontSize: 25,
+  desktopShell: {
+    width: '100%',
+    maxWidth: 1160,
+    minHeight: 720,
+    alignSelf: 'center',
+    flexDirection: 'row',
+    borderRadius: 34,
+    overflow: 'hidden',
+    backgroundColor: C.white,
+    borderWidth: 1,
+    borderColor: '#D8E8F1',
+
+    shadowColor: C.navy,
+    shadowOffset: { width: 0, height: 28 },
+    shadowOpacity: 0.18,
+    shadowRadius: 52,
+    elevation: 14,
+  },
+
+  hero: {
+    flex: 1.12,
+    minHeight: 720,
+    paddingHorizontal: 54,
+    paddingVertical: 48,
+    backgroundColor: C.navy,
+    position: 'relative',
+    overflow: 'hidden',
+  },
+
+  heroGlow: {
+    position: 'absolute',
+    width: 500,
+    height: 500,
+    borderRadius: 250,
+    right: -230,
+    top: 35,
+    backgroundColor: C.blue,
+    opacity: 0.26,
+  },
+
+  heroGlowSmall: {
+    position: 'absolute',
+    width: 270,
+    height: 270,
+    borderRadius: 135,
+    left: -120,
+    bottom: -40,
+    backgroundColor: C.sky,
+    opacity: 0.11,
+  },
+
+  brandRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 13,
+    zIndex: 2,
+  },
+
+  brandName: {
+    color: C.white,
+    fontSize: 18,
     fontWeight: '800',
     letterSpacing: -0.4,
   },
 
-  subheading: {
-    color: '#71817D',
-    fontSize: 14,
-    lineHeight: 20,
-    marginTop: 6,
-    marginBottom: 20,
+  brandSub: {
+    color: '#A7CDE3',
+    fontSize: 9,
+    fontWeight: '600',
+    marginTop: 3,
   },
 
-  modeSwitcher: {
+  heroContent: {
+    marginTop: 72,
+    maxWidth: 510,
+    zIndex: 2,
+  },
+
+  kickerRow: {
     flexDirection: 'row',
-    backgroundColor: '#F2F6F4',
+    alignItems: 'center',
+    gap: 8,
+  },
+
+  kickerDot: {
+    width: 7,
+    height: 7,
+    borderRadius: 4,
+    backgroundColor: C.cyan,
+    shadowColor: C.cyan,
+    shadowOffset: { width: 0, height: 0 },
+    shadowOpacity: 0.85,
+    shadowRadius: 9,
+  },
+
+  kicker: {
+    color: '#8FD7F5',
+    fontSize: 10,
+    fontWeight: '900',
+    letterSpacing: 1.7,
+  },
+
+  heroTitle: {
+    color: C.white,
+    fontSize: 46,
+    lineHeight: 53,
+    fontWeight: '800',
+    letterSpacing: -1.8,
+    marginTop: 17,
+  },
+
+  heroAccent: {
+    color: '#6CCCF4',
+  },
+
+  pulse: {
+    width: 178,
+    height: 28,
+    marginTop: 17,
+    position: 'relative',
+  },
+
+  pulseFlat: {
+    position: 'absolute',
+    left: 0,
+    top: 14,
+    width: 44,
+    height: 2,
+    backgroundColor: C.cyan,
+  },
+
+  pulseRise: {
+    position: 'absolute',
+    left: 40,
+    top: 10,
+    width: 23,
+    height: 2,
+    backgroundColor: C.cyan,
+    transform: [{ rotate: '-18deg' }],
+  },
+
+  pulsePeak: {
+    position: 'absolute',
+    left: 55,
+    top: 7,
+    width: 40,
+    height: 2,
+    backgroundColor: C.cyan,
+    transform: [{ rotate: '-62deg' }],
+  },
+
+  pulseFall: {
+    position: 'absolute',
+    left: 86,
+    top: 13,
+    width: 32,
+    height: 2,
+    backgroundColor: C.cyan,
+    transform: [{ rotate: '30deg' }],
+  },
+
+  pulseFlatRight: {
+    position: 'absolute',
+    right: 0,
+    top: 14,
+    width: 66,
+    height: 2,
+    backgroundColor: C.cyan,
+  },
+
+  heroDescription: {
+    color: '#BCD9E8',
+    fontSize: 14,
+    lineHeight: 23,
+    maxWidth: 455,
+    marginTop: 17,
+  },
+
+  featureList: {
+    marginTop: 34,
+    gap: 18,
+  },
+
+  feature: {
+    flexDirection: 'row',
+    alignItems: 'flex-start',
+    gap: 13,
+  },
+
+  featureIcon: {
+    width: 35,
+    height: 35,
+    borderRadius: 11,
+    backgroundColor: 'rgba(45,156,219,0.14)',
+    borderWidth: 1,
+    borderColor: 'rgba(99,206,245,0.20)',
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+
+  featureSymbol: {
+    color: '#80D8F7',
+    fontSize: 14,
+    fontWeight: '900',
+  },
+
+  featureCopy: {
+    flex: 1,
+  },
+
+  featureTitle: {
+    color: C.white,
+    fontSize: 12,
+    fontWeight: '800',
+  },
+
+  featureText: {
+    color: '#9FC3D7',
+    fontSize: 10,
+    lineHeight: 16,
+    marginTop: 3,
+    maxWidth: 410,
+  },
+
+  heroFooter: {
+    position: 'absolute',
+    left: 54,
+    right: 54,
+    bottom: 36,
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 12,
+    paddingHorizontal: 15,
+    paddingVertical: 13,
+    borderRadius: 16,
+    backgroundColor: 'rgba(255,255,255,0.06)',
+    borderWidth: 1,
+    borderColor: 'rgba(255,255,255,0.09)',
+  },
+
+  footerPulse: {
+    width: 31,
+    height: 31,
+    borderRadius: 16,
+    borderWidth: 1,
+    borderColor: 'rgba(99,206,245,0.28)',
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+
+  footerPulseDot: {
+    width: 8,
+    height: 8,
+    borderRadius: 4,
+    backgroundColor: C.cyan,
+  },
+
+  footerTitle: {
+    color: C.white,
+    fontSize: 10,
+    fontWeight: '800',
+  },
+
+  footerText: {
+    color: '#9FC3D7',
+    fontSize: 9,
+    marginTop: 2,
+  },
+
+  logoHalo: {
+    width: 66,
+    height: 66,
+    borderRadius: 22,
+    backgroundColor: 'rgba(255,255,255,0.08)',
+    borderWidth: 1,
+    borderColor: 'rgba(255,255,255,0.15)',
+    alignItems: 'center',
+    justifyContent: 'center',
+    position: 'relative',
+  },
+
+  logoHaloSmall: {
+    width: 50,
+    height: 50,
+    borderRadius: 17,
+  },
+
+  logoRing: {
+    width: 50,
+    height: 50,
+    borderRadius: 17,
+    backgroundColor: 'rgba(45,156,219,0.22)',
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+
+  logoRingSmall: {
+    width: 39,
+    height: 39,
     borderRadius: 13,
-    padding: 4,
+  },
+
+  logoCore: {
+    width: 38,
+    height: 38,
+    borderRadius: 13,
+    backgroundColor: C.sky,
+    alignItems: 'center',
+    justifyContent: 'center',
+    shadowColor: C.cyan,
+    shadowOffset: { width: 0, height: 5 },
+    shadowOpacity: 0.38,
+    shadowRadius: 12,
+    elevation: 5,
+  },
+
+  logoCoreSmall: {
+    width: 31,
+    height: 31,
+    borderRadius: 11,
+  },
+
+  logoHeart: {
+    color: C.white,
+    fontSize: 18,
+    fontWeight: '900',
+  },
+
+  logoHeartSmall: {
+    fontSize: 15,
+  },
+
+  logoPulseDot: {
+    position: 'absolute',
+    width: 8,
+    height: 8,
+    borderRadius: 4,
+    backgroundColor: C.cyan,
+    top: -2,
+    right: 5,
+    borderWidth: 2,
+    borderColor: C.navy,
+  },
+
+  veins: {
+    position: 'absolute',
+    width: 270,
+    height: 310,
+    right: -42,
+    bottom: 5,
+    opacity: 0.08,
+  },
+
+  veinMain: {
+    position: 'absolute',
+    width: 3,
+    height: 260,
+    right: 98,
+    bottom: -5,
+    backgroundColor: C.cyan,
+    borderRadius: 4,
+    transform: [{ rotate: '17deg' }],
+  },
+
+  veinA: {
+    position: 'absolute',
+    width: 92,
+    height: 2,
+    right: 81,
+    bottom: 91,
+    backgroundColor: C.cyan,
+    transform: [{ rotate: '41deg' }],
+  },
+
+  veinB: {
+    position: 'absolute',
+    width: 82,
+    height: 2,
+    right: 29,
+    bottom: 139,
+    backgroundColor: C.cyan,
+    transform: [{ rotate: '-34deg' }],
+  },
+
+  veinC: {
+    position: 'absolute',
+    width: 69,
+    height: 2,
+    right: 104,
+    bottom: 180,
+    backgroundColor: C.cyan,
+    transform: [{ rotate: '40deg' }],
+  },
+
+  veinD: {
+    position: 'absolute',
+    width: 62,
+    height: 2,
+    right: 59,
+    bottom: 218,
+    backgroundColor: C.cyan,
+    transform: [{ rotate: '-41deg' }],
+  },
+
+  veinDotA: {
+    position: 'absolute',
+    width: 7,
+    height: 7,
+    borderRadius: 4,
+    right: 158,
+    bottom: 121,
+    backgroundColor: C.cyan,
+  },
+
+  veinDotB: {
+    position: 'absolute',
+    width: 6,
+    height: 6,
+    borderRadius: 3,
+    right: 20,
+    bottom: 164,
+    backgroundColor: C.cyan,
+  },
+
+  formPanel: {
+    width: 510,
+    backgroundColor: '#FBFDFE',
+    paddingHorizontal: 55,
+    paddingVertical: 40,
+    justifyContent: 'center',
+  },
+
+  authCard: {
+    width: '100%',
+    maxWidth: 420,
+    alignSelf: 'center',
+  },
+
+  cardAccent: {
+    width: 42,
+    height: 4,
+    borderRadius: 2,
+    backgroundColor: C.sky,
+    marginBottom: 19,
+    shadowColor: C.sky,
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.25,
+    shadowRadius: 7,
+  },
+
+  formHeader: {
     marginBottom: 22,
+  },
+
+  eyebrow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 7,
+    marginBottom: 10,
+  },
+
+  eyebrowHeart: {
+    width: 21,
+    height: 21,
+    borderRadius: 7,
+    backgroundColor: C.soft,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+
+  eyebrowHeartText: {
+    color: C.blue,
+    fontSize: 10,
+    fontWeight: '900',
+  },
+
+  eyebrowText: {
+    color: C.blue,
+    fontSize: 9,
+    fontWeight: '900',
+    letterSpacing: 1.35,
+  },
+
+  formTitle: {
+    color: C.ink,
+    fontSize: 31,
+    lineHeight: 37,
+    fontWeight: '800',
+    letterSpacing: -0.9,
+  },
+
+  formSubtitle: {
+    color: C.muted,
+    fontSize: 12,
+    lineHeight: 19,
+    marginTop: 7,
+  },
+
+  modeSwitch: {
+    flexDirection: 'row',
+    padding: 4,
+    borderRadius: 14,
+    backgroundColor: '#EDF5FA',
+    borderWidth: 1,
+    borderColor: '#E0EDF5',
+    marginBottom: 23,
   },
 
   modeButton: {
     flex: 1,
     minHeight: 42,
+    borderRadius: 10,
     alignItems: 'center',
     justifyContent: 'center',
-    borderRadius: 10,
   },
 
   modeButtonActive: {
-    backgroundColor: '#FFFFFF',
-    shadowColor: '#173D34',
-    shadowOpacity: 0.07,
-    shadowRadius: 7,
-    shadowOffset: {
-      width: 0,
-      height: 3,
-    },
+    backgroundColor: C.white,
+    shadowColor: C.navy,
+    shadowOffset: { width: 0, height: 4 },
+    shadowOpacity: 0.1,
+    shadowRadius: 9,
     elevation: 2,
   },
 
-  modeButtonText: {
-    color: '#71817D',
-    fontSize: 13,
+  modeText: {
+    color: '#7890A0',
+    fontSize: 11,
     fontWeight: '700',
   },
 
-  modeButtonTextActive: {
-    color: '#247A68',
+  modeTextActive: {
+    color: C.deep,
+    fontWeight: '900',
   },
 
-  fieldGroup: {
-    marginBottom: 17,
+  field: {
+    marginBottom: 15,
   },
 
-  labelRow: {
-    flexDirection: 'row',
-    justifyContent: 'space-between',
-    alignItems: 'center',
+  fieldLabel: {
+    color: C.ink,
+    fontSize: 11,
+    fontWeight: '800',
     marginBottom: 7,
   },
 
-  label: {
-    color: '#314E47',
-    fontSize: 13,
-    fontWeight: '700',
-    marginBottom: 7,
-  },
-
-  passwordHint: {
-    color: '#8A9995',
-    fontSize: 9.5,
-    fontWeight: '600',
-    flexShrink: 1,
-    textAlign: 'right',
-  },
-
-  inputWrapper: {
+  inputShell: {
     minHeight: 54,
     flexDirection: 'row',
     alignItems: 'center',
-    backgroundColor: '#F9FBFA',
+    borderRadius: 15,
     borderWidth: 1,
-    borderColor: '#DCE6E2',
-    borderRadius: 14,
-    paddingHorizontal: 13,
-  },
-
-  inputWrapperFocused: {
-    borderColor: '#4B9B88',
-    backgroundColor: '#FFFFFF',
-    shadowColor: '#2E7D6B',
-    shadowOpacity: 0.08,
-    shadowRadius: 8,
-    shadowOffset: {
-      width: 0,
-      height: 2,
-    },
+    borderColor: C.border,
+    backgroundColor: C.white,
+    paddingHorizontal: 12,
+    shadowColor: C.navy,
+    shadowOffset: { width: 0, height: 4 },
+    shadowOpacity: 0.035,
+    shadowRadius: 9,
     elevation: 1,
   },
 
-  inputIcon: {
-    width: 30,
+  inputFocused: {
+    borderColor: C.sky,
+    shadowColor: C.sky,
+    shadowOffset: { width: 0, height: 5 },
+    shadowOpacity: 0.14,
+    shadowRadius: 13,
+    elevation: 3,
+  },
+
+  inputError: {
+    borderColor: '#E38B8B',
+  },
+
+  inputDisabled: {
+    opacity: 0.6,
+  },
+
+  fieldIcon: {
+    width: 31,
+    height: 31,
+    borderRadius: 10,
+    backgroundColor: C.soft,
     alignItems: 'center',
     justifyContent: 'center',
-    marginRight: 4,
+    marginRight: 10,
   },
 
-  inputIconText: {
-    color: '#5B8E82',
-    fontSize: 18,
-    fontWeight: '800',
+  fieldIconFocused: {
+    backgroundColor: '#DCEFFB',
   },
 
-  lockIcon: {
-    color: '#5B8E82',
-    fontSize: 20,
-    fontWeight: '700',
+  fieldIconText: {
+    color: C.blue,
+    fontSize: 13,
+    fontWeight: '900',
   },
 
   input: {
     flex: 1,
     minHeight: 52,
-    color: '#203E37',
-    fontSize: 15,
+    color: C.ink,
+    fontSize: 13,
     paddingVertical: 0,
+    ...(Platform.OS === 'web' ? ({ outlineStyle: 'none' } as any) : {}),
   },
 
-  visibilityButton: {
-    paddingHorizontal: 5,
-    paddingVertical: 8,
+  showButton: {
+    minWidth: 47,
+    minHeight: 44,
+    alignItems: 'flex-end',
+    justifyContent: 'center',
   },
 
-  visibilityText: {
-    color: '#247A68',
-    fontSize: 12,
+  showText: {
+    color: C.blue,
+    fontSize: 10,
+    fontWeight: '900',
+  },
+
+  passwordCard: {
+    backgroundColor: '#F1F8FC',
+    borderWidth: 1,
+    borderColor: '#DCECF5',
+    borderRadius: 14,
+    padding: 13,
+    marginTop: -3,
+    marginBottom: 15,
+  },
+
+  passwordHeader: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    marginBottom: 8,
+  },
+
+  passwordTitle: {
+    color: C.ink,
+    fontSize: 10,
     fontWeight: '800',
   },
 
-  passwordRequirements: {
-    backgroundColor: '#F6FAF8',
-    borderRadius: 12,
-    borderWidth: 1,
-    borderColor: '#E2ECE8',
-    padding: 11,
-    marginTop: -4,
-    marginBottom: 15,
+  strongBadge: {
+    paddingHorizontal: 8,
+    paddingVertical: 4,
+    borderRadius: 20,
+    backgroundColor: '#E3F7ED',
+  },
+
+  strongBadgeText: {
+    color: C.success,
+    fontSize: 8,
+    fontWeight: '900',
   },
 
   requirement: {
     flexDirection: 'row',
     alignItems: 'center',
-    marginVertical: 2,
+    gap: 7,
+    marginTop: 5,
   },
 
-  requirementIndicator: {
-    width: 18,
-    height: 18,
-    borderRadius: 9,
-    backgroundColor: '#E7ECEA',
+  requirementDot: {
+    width: 16,
+    height: 16,
+    borderRadius: 6,
+    backgroundColor: '#E5EDF2',
     alignItems: 'center',
     justifyContent: 'center',
-    marginRight: 7,
   },
 
-  requirementIndicatorValid: {
-    backgroundColor: '#D8EEE6',
+  requirementDotOk: {
+    backgroundColor: '#DDF4E8',
   },
 
-  requirementIndicatorText: {
-    color: '#889691',
-    fontSize: 11,
-    fontWeight: '800',
+  requirementMark: {
+    color: '#8CA0AD',
+    fontSize: 9,
+    fontWeight: '900',
   },
 
-  requirementIndicatorTextValid: {
-    color: '#247A68',
+  requirementMarkOk: {
+    color: C.success,
   },
 
   requirementText: {
-    color: '#7D8B87',
-    fontSize: 11,
+    color: '#7C909D',
+    fontSize: 9,
+    fontWeight: '600',
   },
 
-  requirementTextValid: {
-    color: '#3D7668',
-    fontWeight: '600',
+  requirementTextOk: {
+    color: '#4F7667',
+  },
+
+  matchRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 6,
+    marginTop: -8,
+    marginBottom: 14,
+  },
+
+  matchDot: {
+    width: 6,
+    height: 6,
+    borderRadius: 3,
+  },
+
+  matchGood: {
+    backgroundColor: C.success,
+  },
+
+  matchBad: {
+    backgroundColor: C.danger,
+  },
+
+  matchText: {
+    fontSize: 9,
+    fontWeight: '700',
+  },
+
+  matchTextGood: {
+    color: C.success,
+  },
+
+  matchTextBad: {
+    color: C.danger,
+  },
+
+  termsRow: {
+    flexDirection: 'row',
+    alignItems: 'flex-start',
+    gap: 9,
+    marginBottom: 15,
+  },
+
+  checkbox: {
+    width: 19,
+    height: 19,
+    borderRadius: 6,
+    borderWidth: 1.5,
+    borderColor: '#B8CCD8',
+    backgroundColor: C.white,
+    alignItems: 'center',
+    justifyContent: 'center',
+    marginTop: 1,
+  },
+
+  checkboxChecked: {
+    backgroundColor: C.blue,
+    borderColor: C.blue,
+  },
+
+  checkboxText: {
+    color: C.white,
+    fontSize: 11,
+    fontWeight: '900',
+  },
+
+  termsText: {
+    flex: 1,
+    color: C.muted,
+    fontSize: 9,
+    lineHeight: 14,
   },
 
   errorBox: {
     flexDirection: 'row',
-    alignItems: 'center',
-    backgroundColor: '#FFF4F2',
-    borderWidth: 1,
-    borderColor: '#F2D3CE',
+    alignItems: 'flex-start',
+    gap: 9,
+    padding: 11,
     borderRadius: 12,
-    padding: 12,
-    marginBottom: 16,
+    backgroundColor: '#FFF4F4',
+    borderWidth: 1,
+    borderColor: '#F1D3D3',
+    marginBottom: 14,
   },
 
   errorIcon: {
-    width: 23,
-    height: 23,
-    borderRadius: 12,
-    backgroundColor: '#C95C4B',
+    width: 19,
+    height: 19,
+    borderRadius: 10,
+    backgroundColor: C.danger,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+
+  errorIconText: {
+    color: C.white,
+    fontSize: 10,
+    fontWeight: '900',
+  },
+
+  errorText: {
+    flex: 1,
+    color: '#8B4747',
+    fontSize: 10,
+    lineHeight: 15,
+    fontWeight: '600',
+  },
+
+  primaryButton: {
+    minHeight: 56,
+    borderRadius: 16,
+    backgroundColor: C.blue,
+    justifyContent: 'center',
+    shadowColor: C.deep,
+    shadowOffset: { width: 0, height: 11 },
+    shadowOpacity: 0.24,
+    shadowRadius: 18,
+    elevation: 6,
+  },
+
+  primaryPressed: {
+    backgroundColor: C.deep,
+    transform: [{ scale: 0.99 }],
+  },
+
+  primaryDisabled: {
+    opacity: 0.65,
+  },
+
+  primaryContent: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    paddingHorizontal: 16,
+  },
+
+  primaryHeart: {
+    width: 26,
+    height: 26,
+    borderRadius: 9,
+    backgroundColor: 'rgba(255,255,255,0.14)',
     alignItems: 'center',
     justifyContent: 'center',
     marginRight: 9,
   },
 
-  errorIconText: {
-    color: '#FFFFFF',
-    fontSize: 13,
-    fontWeight: '800',
-  },
-
-  errorText: {
-    flex: 1,
-    color: '#8E4137',
-    fontSize: 12,
-    lineHeight: 17,
-    fontWeight: '600',
-  },
-
-  primaryButton: {
-    minHeight: 54,
-    borderRadius: 15,
-    backgroundColor: '#247A68',
-    alignItems: 'center',
-    justifyContent: 'center',
-    flexDirection: 'row',
-    gap: 9,
-    marginTop: 2,
-    shadowColor: '#1E6657',
-    shadowOpacity: 0.18,
-    shadowRadius: 12,
-    shadowOffset: {
-      width: 0,
-      height: 6,
-    },
-    elevation: 3,
-  },
-
-  primaryButtonPressed: {
-    transform: [{ scale: 0.985 }],
-    opacity: 0.92,
-  },
-
-  primaryButtonDisabled: {
-    opacity: 0.72,
-  },
-
-  primaryButtonText: {
-    color: '#FFFFFF',
-    fontSize: 15,
-    fontWeight: '800',
-  },
-
-  secureRow: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'center',
-    marginTop: 15,
-    paddingHorizontal: 8,
-  },
-
-  secureDot: {
-    width: 6,
-    height: 6,
-    borderRadius: 3,
-    backgroundColor: '#57A38F',
-    marginRight: 7,
-  },
-
-  secureText: {
-    color: '#7C8D88',
-    fontSize: 10.5,
-    lineHeight: 15,
-    textAlign: 'center',
-  },
-
-  featureRow: {
-    flexDirection: 'row',
-    alignItems: 'stretch',
-    justifyContent: 'space-between',
-    marginTop: 20,
-    backgroundColor: '#FFFFFF',
-    borderWidth: 1,
-    borderColor: '#E4ECE9',
-    borderRadius: 18,
-    paddingVertical: 16,
-    paddingHorizontal: 8,
-  },
-
-  featureItem: {
-    flex: 1,
-    alignItems: 'center',
-  },
-
-  featureIcon: {
-    width: 32,
-    height: 32,
-    borderRadius: 11,
-    backgroundColor: '#EDF6F2',
-    alignItems: 'center',
-    justifyContent: 'center',
-    marginBottom: 7,
-  },
-
-  featureIconText: {
-    color: '#2E7D6B',
-    fontSize: 15,
-    fontWeight: '800',
-  },
-
-  featureTitle: {
-    color: '#36564E',
+  primaryHeartText: {
+    color: C.white,
     fontSize: 11,
+    fontWeight: '900',
+  },
+
+  primaryText: {
+    color: C.white,
+    fontSize: 12,
+    fontWeight: '900',
+  },
+
+  primaryArrow: {
+    color: C.white,
+    fontSize: 18,
+    fontWeight: '600',
+    marginLeft: 9,
+    marginTop: -2,
+  },
+
+  securityRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    gap: 8,
+    marginTop: 14,
+  },
+
+  securityBadge: {
+    width: 22,
+    height: 22,
+    borderRadius: 8,
+    backgroundColor: C.soft,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+
+  securityCheck: {
+    color: C.blue,
+    fontSize: 10,
+    fontWeight: '900',
+  },
+
+  securityTitle: {
+    color: '#607A89',
+    fontSize: 9,
     fontWeight: '800',
   },
 
-  featureDescription: {
-    color: '#899791',
-    fontSize: 9.5,
-    marginTop: 2,
-    textAlign: 'center',
+  securityText: {
+    color: '#9AAAB4',
+    fontSize: 8,
+    marginTop: 1,
   },
 
-  featureDivider: {
-    width: 1,
-    backgroundColor: '#E7EEEB',
-    marginVertical: 3,
+  dividerRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 9,
+    marginTop: 22,
+    marginBottom: 13,
   },
 
-  footerText: {
-    color: '#8A9894',
+  divider: {
+    flex: 1,
+    height: 1,
+    backgroundColor: '#E1ECF2',
+  },
+
+  dividerText: {
+    color: '#96A8B2',
+    fontSize: 7,
+    fontWeight: '900',
+    letterSpacing: 1.1,
+  },
+
+  healthStrip: {
+    minHeight: 72,
+    borderRadius: 16,
+    borderWidth: 1,
+    borderColor: '#E0ECF3',
+    backgroundColor: '#F7FBFD',
+    flexDirection: 'row',
+    alignItems: 'center',
+  },
+
+  healthItem: {
+    flex: 1,
+    alignItems: 'center',
+  },
+
+  healthIcon: {
+    width: 25,
+    height: 25,
+    borderRadius: 8,
+    backgroundColor: C.soft,
+    alignItems: 'center',
+    justifyContent: 'center',
+    marginBottom: 4,
+  },
+
+  healthHeart: {
+    color: C.blue,
+    fontSize: 11,
+    fontWeight: '900',
+  },
+
+  healthAi: {
+    color: C.blue,
     fontSize: 10,
-    lineHeight: 15,
+    fontWeight: '900',
+  },
+
+  healthValue: {
+    color: C.deep,
+    fontSize: 8,
+    fontWeight: '900',
+    letterSpacing: 0.4,
+  },
+
+  healthLabel: {
+    color: '#93A5B0',
+    fontSize: 7,
+    marginTop: 2,
+  },
+
+  healthDivider: {
+    width: 1,
+    height: 37,
+    backgroundColor: '#DFEAF0',
+  },
+
+  stepsIcon: {
+    width: 16,
+    height: 17,
+    position: 'relative',
+  },
+
+  stepOne: {
+    position: 'absolute',
+    width: 7,
+    height: 11,
+    borderRadius: 5,
+    backgroundColor: C.blue,
+    left: 1,
+    top: 0,
+    transform: [{ rotate: '-18deg' }],
+  },
+
+  stepTwo: {
+    position: 'absolute',
+    width: 7,
+    height: 11,
+    borderRadius: 5,
+    backgroundColor: C.blue,
+    right: 1,
+    bottom: 0,
+    transform: [{ rotate: '-18deg' }],
+  },
+
+  disclaimer: {
+    color: '#94A5AF',
+    fontSize: 8,
+    lineHeight: 13,
     textAlign: 'center',
-    marginTop: 18,
-    paddingHorizontal: 18,
+    marginTop: 14,
+  },
+
+  mobile: {
+    width: '100%',
+    maxWidth: 520,
+    alignSelf: 'center',
+  },
+
+  mobileBrand: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 12,
+    paddingHorizontal: 3,
+    marginBottom: 16,
+  },
+
+  mobileBrandName: {
+    color: C.ink,
+    fontSize: 18,
+    fontWeight: '800',
+  },
+
+  mobileBrandSub: {
+    color: C.muted,
+    fontSize: 9,
+    marginTop: 2,
+  },
+
+  mobileHero: {
+    minHeight: 220,
+    backgroundColor: C.navy,
+    borderRadius: 25,
+    paddingHorizontal: 23,
+    paddingVertical: 23,
+    marginBottom: 16,
+    overflow: 'hidden',
+    position: 'relative',
+
+    shadowColor: C.navy,
+    shadowOffset: { width: 0, height: 13 },
+    shadowOpacity: 0.22,
+    shadowRadius: 21,
+    elevation: 7,
+  },
+
+  mobileKicker: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 7,
+  },
+
+  mobileKickerText: {
+    color: '#8FD7F5',
+    fontSize: 8,
+    fontWeight: '900',
+    letterSpacing: 1.2,
+  },
+
+  mobileHeroTitle: {
+    color: C.white,
+    fontSize: 28,
+    lineHeight: 33,
+    fontWeight: '800',
+    letterSpacing: -0.8,
+    marginTop: 12,
+  },
+
+  mobileHeroText: {
+    color: '#B9D6E6',
+    fontSize: 10,
+    lineHeight: 16,
+    maxWidth: 350,
+    marginTop: 4,
+  },
+
+  mobileHealthRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 17,
+    marginTop: 14,
+  },
+
+  mobileHealthItem: {
+    color: '#8CCFEF',
+    fontSize: 9,
+    fontWeight: '800',
   },
 });

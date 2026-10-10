@@ -2,8 +2,8 @@ import axios from 'axios';
 import { getToken } from './authStore';
 
 const API_BASE_URL = process.env.EXPO_PUBLIC_API_BASE_URL
-  ? `${process.env.EXPO_PUBLIC_API_BASE_URL}/api/v1`
-  : 'http://192.168.20.5:5000/api/v1';
+  ? `${process.env.EXPO_PUBLIC_API_BASE_URL.replace(/\/+$/, '')}/api/v1`
+  : 'http://192.168.20.5:3000/api/v1';
 
 const apiClient = axios.create({
   baseURL: API_BASE_URL,
@@ -13,9 +13,11 @@ const apiClient = axios.create({
 apiClient.interceptors.request.use(
   async (config) => {
     const token = await getToken();
+
     if (token) {
       config.headers.Authorization = `Bearer ${token}`;
     }
+
     return config;
   },
   (error) => Promise.reject(error)

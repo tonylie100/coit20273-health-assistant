@@ -19,18 +19,27 @@ export default function AIInsightCard({
     <View style={styles.container}>
       <View style={styles.header}>
         <View style={styles.icon}>
-          <Text style={styles.iconText}>
+          <Text
+            style={styles.iconText}
+            accessibilityLabel="AI insight"
+          >
             ✨
           </Text>
         </View>
 
-        <View>
+        <View style={styles.headerText}>
           <Text style={styles.title}>
             Personalised Health Insight
           </Text>
 
           <Text style={styles.subtitle}>
             Based on your current health context
+          </Text>
+        </View>
+
+        <View style={styles.aiBadge}>
+          <Text style={styles.aiBadgeText}>
+            AI INSIGHT
           </Text>
         </View>
       </View>
@@ -40,11 +49,20 @@ export default function AIInsightCard({
       </Text>
 
       <Pressable
-        style={styles.button}
+        style={({ pressed }) => [
+          styles.button,
+          pressed && styles.buttonPressed,
+        ]}
         onPress={onAskAI}
+        accessibilityRole="button"
+        accessibilityLabel="Ask AI Assistant about your health insight"
       >
         <Text style={styles.buttonText}>
-          Ask AI Assistant →
+          Ask AI Assistant
+        </Text>
+
+        <Text style={styles.buttonArrow}>
+          →
         </Text>
       </Pressable>
     </View>
@@ -57,11 +75,20 @@ const styles = StyleSheet.create({
     maxWidth: 1180,
     alignSelf: 'center',
     backgroundColor: '#FFFFFF',
-    borderRadius: 20,
+    borderRadius: 22,
     borderWidth: 1,
-    borderColor: '#DCEEEA',
-    padding: 18,
-    marginBottom: 18,
+    borderColor: '#E5DFF8',
+    padding: 20,
+    marginBottom: 20,
+
+    shadowColor: '#51418B',
+    shadowOffset: {
+      width: 0,
+      height: 3,
+    },
+    shadowOpacity: 0.045,
+    shadowRadius: 10,
+    elevation: 2,
   },
 
   header: {
@@ -70,50 +97,95 @@ const styles = StyleSheet.create({
   },
 
   icon: {
-    width: 42,
-    height: 42,
-    borderRadius: 14,
-    backgroundColor: '#FFF6E8',
+    width: 46,
+    height: 46,
+    borderRadius: 15,
+    backgroundColor: '#F0EBFF',
+    borderWidth: 1,
+    borderColor: '#E4DCFF',
     alignItems: 'center',
     justifyContent: 'center',
-    marginRight: 11,
+    marginRight: 12,
   },
 
   iconText: {
-    fontSize: 20,
+    fontSize: 21,
+  },
+
+  headerText: {
+    flex: 1,
+    minWidth: 0,
   },
 
   title: {
-    fontSize: 13,
-    fontWeight: '900',
-    color: '#173A51',
+    fontSize: 15,
+    lineHeight: 20,
+    fontWeight: '800',
+    color: '#302753',
   },
 
   subtitle: {
-    fontSize: 9,
-    color: '#82939E',
+    fontSize: 11,
+    lineHeight: 16,
+    color: '#81799B',
     marginTop: 3,
   },
 
+  aiBadge: {
+    backgroundColor: '#F0EBFF',
+    borderWidth: 1,
+    borderColor: '#E1D8FF',
+    borderRadius: 10,
+    paddingHorizontal: 8,
+    paddingVertical: 5,
+    marginLeft: 8,
+  },
+
+  aiBadgeText: {
+    fontSize: 8,
+    lineHeight: 11,
+    fontWeight: '900',
+    letterSpacing: 0.4,
+    color: '#6655B7',
+  },
+
   insight: {
-    fontSize: 12,
-    lineHeight: 19,
-    color: '#536C7D',
-    marginTop: 15,
+    fontSize: 14,
+    lineHeight: 22,
+    color: '#554F6E',
+    marginTop: 18,
   },
 
   button: {
+    minHeight: 44,
     alignSelf: 'flex-start',
-    backgroundColor: '#E5F6F1',
-    paddingHorizontal: 13,
-    paddingVertical: 9,
-    borderRadius: 11,
-    marginTop: 14,
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    backgroundColor: '#6655B7',
+    paddingHorizontal: 16,
+    paddingVertical: 11,
+    borderRadius: 13,
+    marginTop: 18,
+  },
+
+  buttonPressed: {
+    backgroundColor: '#51418F',
+    opacity: 0.92,
   },
 
   buttonText: {
-    fontSize: 10,
-    fontWeight: '900',
-    color: '#1A725F',
+    fontSize: 13,
+    lineHeight: 18,
+    fontWeight: '800',
+    color: '#FFFFFF',
+  },
+
+  buttonArrow: {
+    fontSize: 17,
+    lineHeight: 19,
+    fontWeight: '700',
+    color: '#FFFFFF',
+    marginLeft: 9,
   },
 });

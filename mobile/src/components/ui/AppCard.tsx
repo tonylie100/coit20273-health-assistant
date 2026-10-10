@@ -32,9 +32,7 @@ export default function AppCard({
       style={[
         styles.card,
         padded && styles.padded,
-        elevated
-          ? shadows.elevated
-          : shadows.card,
+        elevated ? shadows.elevated : shadows.card,
         style,
       ]}
     >

@@ -1,4 +1,4 @@
-import React, { useEffect, useMemo, useState } from 'react';
+import React, { useEffect, useRef, useState } from 'react';
 import {
   Pressable,
   SafeAreaView,
@@ -6,6 +6,7 @@ import {
   StyleSheet,
   Text,
   View,
+  useWindowDimensions,
 } from 'react-native';
 import { router } from 'expo-router';
 
@@ -23,7 +24,35 @@ import {
   getMonitoringStartedAt,
 } from '../services/healthStream';
 
-import { colors, radii, shadows, spacing, typography } from '../theme';
+const C = {
+  bg: '#080F18',
+  sidebar: '#101827',
+  card: '#182238',
+  card2: '#202A43',
+  border: '#2A3650',
+  text: '#F4F6FF',
+  secondary: '#B2BED1',
+  muted: '#8393AA',
+  green: '#49D6A0',
+  greenBg: '#153B35',
+  greenBorder: '#27675A',
+  orange: '#FF9A62',
+  orangeBg: '#493126',
+  red: '#F16C76',
+  redBg: '#40232F',
+  blue: '#78BFFF',
+  blueBg: '#172D46',
+  purple: '#B5A4FF',
+  purpleBg: '#302A4C',
+  heart: '#F07887',
+  oxygen: '#78BFFF',
+  temperature: '#FFB86B',
+  steps: '#49D6A0',
+  calories: '#FF9A62',
+  activity: '#68C8C0',
+  water: '#78BFFF',
+  sleep: '#B5A4FF',
+};
 
 type MetricColor =
   | 'heart'
@@ -36,49 +65,63 @@ type MetricColor =
   | 'sleep';
 
 const metricColors: Record<MetricColor, string> = {
-  heart: colors.heart,
-  oxygen: colors.oxygen,
-  temperature: colors.temperature,
-  steps: colors.steps,
-  calories: colors.calories,
-  activity: colors.activity,
-  water: colors.water,
-  sleep: colors.sleep,
+  heart: C.heart,
+  oxygen: C.oxygen,
+  temperature: C.temperature,
+  steps: C.steps,
+  calories: C.calories,
+  activity: C.activity,
+  water: C.water,
+  sleep: C.sleep,
 };
 
 export default function LiveHealthScreen() {
-  const [health, setHealth] = useState<HealthState>(getHealthState());
-  const [running, setRunning] = useState(isHealthStreamRunning());
+  const { width } = useWindowDimensions();
+  const isWide = width >= 820;
+  const isCompact = width < 480;
+
+  const [health, setHealth] = useState<HealthState>(
+    getHealthState(),
+  );
+  const [running, setRunning] = useState(
+    isHealthStreamRunning(),
+  );
   const [startedAt, setStartedAt] = useState<string | null>(
-    getMonitoringStartedAt()
+    getMonitoringStartedAt(),
   );
 
-  /*
-   * The live screen subscribes to the same shared health state
-   * used by the dashboard and AI assistant.
-   *
-   * Demo wearable
-   *      ↓
-   * healthStream
-   *      ↓
-   * healthState
-   *      ↓
-   * Live Health UI
-   */
+  // Keep the latest 30 heart-rate readings from the current session.
+  const [heartRateHistory, setHeartRateHistory] = useState<number[]>([]);
+  const previousStreamState = useRef(isHealthStreamRunning());
+
   useEffect(() => {
     const unsubscribe = subscribeToHealthState((state) => {
+      const streamRunning = isHealthStreamRunning();
+      const wasRunning = previousStreamState.current;
+
+      // If a new stream starts elsewhere, begin a fresh chart history.
+      if (streamRunning && !wasRunning) {
+        setHeartRateHistory([]);
+      }
+
+      previousStreamState.current = streamRunning;
+
       setHealth({ ...state });
-      setRunning(isHealthStreamRunning());
+      setRunning(streamRunning);
       setStartedAt(getMonitoringStartedAt());
+
+      // Capture actual readings emitted by the existing demo stream.
+      if (streamRunning && state.heartRate !== null) {
+        setHeartRateHistory((previous) => {
+          const next = [...previous, state.heartRate as number];
+          return next.slice(-30);
+        });
+      }
     });
 
     return unsubscribe;
   }, []);
 
-  /*
-   * Keep session duration, freshness and stream status moving
-   * even when a particular health value has not changed.
-   */
   useEffect(() => {
     const timer = setInterval(() => {
       setRunning(isHealthStreamRunning());
@@ -90,665 +133,784 @@ export default function LiveHealthScreen() {
   }, []);
 
   const toggleMonitoring = () => {
-    if (running) {
+    if (isHealthStreamRunning()) {
       stopHealthStream();
+      previousStreamState.current = false;
       setRunning(false);
       setStartedAt(null);
-      return;
+    } else {
+      setHeartRateHistory([]);
+      previousStreamState.current = true;
+      startHealthStream();
+      setRunning(true);
+      setStartedAt(getMonitoringStartedAt());
     }
-
-    startHealthStream();
-    setRunning(true);
-    setStartedAt(getMonitoringStartedAt());
   };
 
-  const wellnessScore = health.wellnessScore ?? 0;
-  const wellnessLabel = getWellnessLabel(health.wellnessScore);
+    const sessionDuration = (() => {
+    if (!running || !startedAt) return '00:00';
 
-  const heartStatus = getHeartStatus(health.heartRate);
-  const oxygenStatus = getOxygenStatus(health.oxygenSaturation);
+    const startedAtMs = new Date(startedAt).getTime();
 
-  const freshness = getFreshnessLabel(health.lastUpdated);
-
-  const sessionDuration = useMemo(() => {
-    if (!startedAt || !running) return 'Not active';
+    if (!Number.isFinite(startedAtMs)) return '00:00';
 
     const elapsed = Math.max(
       0,
-      Math.floor((Date.now() - new Date(startedAt).getTime()) / 1000)
+      Math.floor((Date.now() - startedAtMs) / 1000)
     );
 
     const minutes = Math.floor(elapsed / 60);
     const seconds = elapsed % 60;
 
-    return `${String(minutes).padStart(2, '0')}:${String(seconds).padStart(
-      2,
-      '0'
-    )}`;
-  }, [startedAt, running, health.lastUpdated]);
+    return `${String(minutes).padStart(2, '0')}:${String(seconds).padStart(2, '0')}`;
+  })();
+
+  const freshness = getFreshnessLabel(health.lastUpdated);
+  const heartStatus = getHeartStatus(health.heartRate);
+  const oxygenStatus = getOxygenStatus(health.oxygenSaturation);
+  const wellnessLabel = getWellnessLabel(health.wellnessScore);
+
+
+  const hasHealthData =
+    health.heartRate !== null ||
+    health.oxygenSaturation !== null ||
+    health.sleepHours !== null ||
+    health.steps > 0 ||
+    health.waterIntake > 0;
+
+  const wellnessScore = health.wellnessScore;
+
+const wellnessFactors = [
+  {
+    label: 'Heart rate',
+    available: health.heartRate !== null,
+    value:
+      health.heartRate !== null
+        ? `${health.heartRate} BPM`
+        : 'Unavailable',
+  },
+  {
+    label: 'Activity',
+    available: health.steps > 0,
+    value:
+      health.steps > 0
+        ? `${formatNumber(health.steps)} steps`
+        : 'Unavailable',
+  },
+  {
+    label: 'Sleep',
+    available: health.sleepHours !== null,
+    value:
+      health.sleepHours !== null
+        ? `${health.sleepHours.toFixed(1)} hours`
+        : 'Unavailable',
+  },
+  {
+    label: 'Hydration',
+    available: health.waterIntake > 0,
+    value:
+      health.waterIntake > 0
+        ? `${health.waterIntake.toFixed(1)} L`
+        : 'Unavailable',
+  },
+];
+
+const availableWellnessFactors =
+  wellnessFactors.filter((factor) => factor.available).length;
+
+const contentPadding = isCompact ? 14 : isWide ? 28 : 20;
 
   return (
     <SafeAreaView style={styles.safeArea}>
       <ScrollView
         style={styles.container}
-        contentContainerStyle={styles.content}
+        contentContainerStyle={[
+          styles.content,
+          { paddingHorizontal: contentPadding },
+        ]}
         showsVerticalScrollIndicator={false}
       >
-        {/* HEADER */}
-        <View style={styles.header}>
-          <Pressable
-            style={({ pressed }) => [
-              styles.backButton,
-              pressed && styles.pressed,
-            ]}
-            onPress={() => router.back()}
-            accessibilityRole="button"
-            accessibilityLabel="Go back"
-          >
-            <Text style={styles.backIcon}>‹</Text>
-          </Pressable>
-
-          <View style={styles.headerCenter}>
-            <Text style={styles.headerTitle}>Live Health</Text>
-            <Text style={styles.headerSubtitle}>
-              Real-time wellness monitoring
-            </Text>
-          </View>
-
-          <View
-            style={[
-              styles.headerStatus,
-              running && styles.headerStatusLive,
-            ]}
-          >
-            <View
-              style={[
-                styles.headerStatusDot,
-                running && styles.headerStatusDotLive,
-              ]}
-            />
-            <Text
-              style={[
-                styles.headerStatusText,
-                running && styles.headerStatusTextLive,
+        <View style={styles.shell}>
+          {/* HEADER */}
+          <View style={styles.header}>
+            <Pressable
+              accessibilityRole="button"
+              accessibilityLabel="Go back"
+              onPress={() => router.back()}
+              style={({ pressed }) => [
+                styles.backButton,
+                pressed && styles.pressed,
               ]}
             >
-              {running ? 'LIVE' : 'OFFLINE'}
-            </Text>
-          </View>
-        </View>
+              <Text style={styles.backIcon}>‹</Text>
+            </Pressable>
 
-        {/* LIVE CONNECTION HERO */}
-        <View style={styles.deviceHero}>
-          <View style={styles.deviceHeroTop}>
+            <View style={styles.headerCenter}>
+              <View style={styles.eyebrowRow}>
+                <View
+                  style={[
+                    styles.dot,
+                    {
+                      backgroundColor: running ? C.green : C.muted,
+                    },
+                  ]}
+                />
+                <Text style={styles.eyebrow}>
+                  REAL-TIME WELLNESS
+                </Text>
+              </View>
+
+              <Text style={styles.headerTitle}>Live Health</Text>
+              <Text style={styles.headerSubtitle}>
+                Monitor your latest wellness signals in one place
+              </Text>
+            </View>
+
             <View
               style={[
-                styles.deviceIcon,
-                running && styles.deviceIconLive,
+                styles.pill,
+                running ? styles.pillLive : styles.pillIdle,
               ]}
             >
-              <Text style={styles.deviceIconText}>⌚</Text>
-            </View>
-
-            <View style={styles.deviceHeroInfo}>
-              <View style={styles.deviceNameRow}>
-                <Text style={styles.deviceName}>
-                  {health.deviceName || 'Demo Wearable'}
-                </Text>
-
-                <View
-                  style={[
-                    styles.connectedBadge,
-                    running
-                      ? styles.connectedBadgeLive
-                      : styles.connectedBadgeOffline,
-                  ]}
-                >
-                  <View
-                    style={[
-                      styles.connectedDot,
-                      running && styles.connectedDotLive,
-                    ]}
-                  />
-                  <Text
-                    style={[
-                      styles.connectedText,
-                      running && styles.connectedTextLive,
-                    ]}
-                  >
-                    {running ? 'Connected' : 'Not connected'}
-                  </Text>
-                </View>
-              </View>
-
-              <Text style={styles.deviceDescription}>
-                {running
-                  ? 'Receiving simulated wearable readings in real time'
-                  : 'Start monitoring to receive simulated wearable readings'}
-              </Text>
-            </View>
-          </View>
-
-          <View style={styles.deviceHeroDivider} />
-
-          <View style={styles.sessionRow}>
-            <View style={styles.sessionInfo}>
-              <Text style={styles.sessionLabel}>MONITORING SESSION</Text>
-              <Text style={styles.sessionValue}>{sessionDuration}</Text>
-            </View>
-
-            <View style={styles.sessionMeta}>
-              <View style={styles.freshnessRow}>
-                <View
-                  style={[
-                    styles.freshnessDot,
-                    running && styles.freshnessDotLive,
-                  ]}
-                />
-                <Text style={styles.freshnessText}>{freshness}</Text>
-              </View>
-
-              <Text style={styles.demoLabel}>DEMO DATA</Text>
-            </View>
-          </View>
-
-          <Pressable
-            style={({ pressed }) => [
-              styles.monitorButton,
-              running && styles.monitorButtonStop,
-              pressed && styles.monitorButtonPressed,
-            ]}
-            onPress={toggleMonitoring}
-            accessibilityRole="button"
-            accessibilityLabel={
-              running ? 'Stop health monitoring' : 'Start health monitoring'
-            }
-          >
-            <View
-              style={[
-                styles.monitorButtonDot,
-                running && styles.monitorButtonDotStop,
-              ]}
-            />
-            <Text style={styles.monitorButtonText}>
-              {running ? 'Stop monitoring' : 'Start monitoring'}
-            </Text>
-          </Pressable>
-        </View>
-
-        {/* LIVE STATUS STRIP */}
-        {running ? (
-          <View style={styles.liveStrip}>
-            <View style={styles.liveStripLeft}>
-              <View style={styles.liveStripIcon}>
-                <Text style={styles.liveStripIconText}>⌁</Text>
-              </View>
-
-              <View style={styles.liveStripContent}>
-                <Text style={styles.liveStripTitle}>
-                  Live monitoring is active
-                </Text>
-                <Text style={styles.liveStripText}>
-                  Health values update automatically and are shared with the
-                  wellness dashboard and AI assistant.
-                </Text>
-              </View>
-            </View>
-
-            <View style={styles.livePulse}>
-              <View style={styles.livePulseDot} />
-            </View>
-          </View>
-        ) : (
-          <View style={styles.waitingStrip}>
-            <View style={styles.waitingStripIcon}>
-              <Text style={styles.waitingStripIconText}>⌚</Text>
-            </View>
-
-            <View style={styles.waitingStripContent}>
-              <Text style={styles.waitingStripTitle}>
-                Monitoring is paused
-              </Text>
-              <Text style={styles.waitingStripText}>
-                Start the demo wearable to see the live health experience.
-              </Text>
-            </View>
-          </View>
-        )}
-
-        {/* DEMO NOTICE */}
-        <View style={styles.demoNotice}>
-          <View style={styles.demoNoticeIcon}>
-            <Text style={styles.demoNoticeIconText}>i</Text>
-          </View>
-
-          <View style={styles.demoNoticeContent}>
-            <View style={styles.demoNoticeTitleRow}>
-              <Text style={styles.demoNoticeTitle}>
-                Demo wearable simulation
-              </Text>
-
-              <View style={styles.demoBadge}>
-                <Text style={styles.demoBadgeText}>SIMULATED</Text>
-              </View>
-            </View>
-
-            <Text style={styles.demoNoticeText}>
-              These readings are simulated for the project prototype. They are
-              not collected from a physical wearable device and should not be
-              treated as clinical measurements.
-            </Text>
-          </View>
-        </View>
-
-        {/* MAIN HEART RATE */}
-        <SectionHeading
-          eyebrow="PRIMARY VITAL"
-          title="Heart rate"
-          subtitle="Current simulated heart-rate reading"
-        />
-
-        <View style={styles.heartCard}>
-          <View style={styles.heartTop}>
-            <View style={styles.heartIconCircle}>
-              <Text style={styles.heartIcon}>♥</Text>
-            </View>
-
-            <View style={styles.heartMain}>
-              <View style={styles.heartValueRow}>
-                <Text style={styles.heartValue}>
-                  {health.heartRate ?? '--'}
-                </Text>
-                <Text style={styles.heartUnit}>BPM</Text>
-              </View>
-
-              <View style={styles.heartStatusRow}>
-                <View
-                  style={[
-                    styles.statusDot,
-                    { backgroundColor: heartStatus.color },
-                  ]}
-                />
-                <Text
-                  style={[
-                    styles.heartStatus,
-                    { color: heartStatus.color },
-                  ]}
-                >
-                  {heartStatus.label}
-                </Text>
-              </View>
-            </View>
-
-            {running && (
-              <View style={styles.pulseBadge}>
-                <View style={styles.pulseDot} />
-                <Text style={styles.pulseText}>LIVE</Text>
-              </View>
-            )}
-          </View>
-
-          <View style={styles.chartArea}>
-            <View style={styles.chartHeader}>
-              <Text style={styles.chartLabel}>LIVE SIGNAL PREVIEW</Text>
-              {running ? (
-                <Text style={styles.chartLiveText}>Updating</Text>
-              ) : null}
-            </View>
-
-            <MiniHeartChart active={running} />
-          </View>
-
-          <View style={styles.chartFooter}>
-            <Text style={styles.chartFooterText}>
-              Prototype signal visualisation
-            </Text>
-            <Text style={styles.chartFooterValue}>
-              {freshness}
-            </Text>
-          </View>
-        </View>
-
-        {/* LIVE METRICS */}
-        <SectionHeading
-          eyebrow="LIVE READINGS"
-          title="Current health metrics"
-          subtitle="Updated automatically while monitoring is active"
-        />
-
-        <View style={styles.metricsGrid}>
-          <LiveMetricCard
-            icon="🫁"
-            label="Oxygen"
-            value={
-              health.oxygenSaturation !== null
-                ? `${health.oxygenSaturation}`
-                : '--'
-            }
-            unit="%"
-            status={oxygenStatus.label}
-            statusColor={oxygenStatus.color}
-            color="oxygen"
-          />
-
-          <LiveMetricCard
-            icon="🌡"
-            label="Temperature"
-            value={
-              health.temperatureC !== null
-                ? health.temperatureC.toFixed(1)
-                : '--'
-            }
-            unit="°C"
-            status="Simulated reading"
-            color="temperature"
-          />
-
-          <LiveMetricCard
-            icon="👟"
-            label="Steps"
-            value={formatNumber(health.steps)}
-            unit=""
-            status={`${progress(health.steps, health.stepGoal)}% of goal`}
-            color="steps"
-            progress={progress(health.steps, health.stepGoal)}
-          />
-
-          <LiveMetricCard
-            icon="🔥"
-            label="Calories"
-            value={Math.round(health.caloriesBurned).toString()}
-            unit="kcal"
-            status="Burned today"
-            color="calories"
-          />
-
-          <LiveMetricCard
-            icon="⚡"
-            label="Active time"
-            value={health.activeMinutes.toString()}
-            unit="min"
-            status="Movement today"
-            color="activity"
-          />
-
-          <LiveMetricCard
-            icon="📍"
-            label="Distance"
-            value={health.distanceKm.toFixed(2)}
-            unit="km"
-            status="Distance today"
-            color="steps"
-          />
-
-          <LiveMetricCard
-            icon="💧"
-            label="Hydration"
-            value={health.waterIntake.toFixed(1)}
-            unit="L"
-            status={`${progress(
-              health.waterIntake,
-              health.waterGoalLitres
-            )}% of goal`}
-            color="water"
-            progress={progress(
-              health.waterIntake,
-              health.waterGoalLitres
-            )}
-          />
-
-          <LiveMetricCard
-            icon="😴"
-            label="Sleep"
-            value={
-              health.sleepHours !== null
-                ? health.sleepHours.toFixed(1)
-                : '--'
-            }
-            unit="hrs"
-            status={`${progress(
-              health.sleepHours ?? 0,
-              health.sleepGoalHours
-            )}% of goal`}
-            color="sleep"
-            progress={progress(
-              health.sleepHours ?? 0,
-              health.sleepGoalHours
-            )}
-          />
-        </View>
-
-        {/* WELLNESS SCORE */}
-        <SectionHeading
-          eyebrow="HEALTH SUMMARY"
-          title="Today's wellness"
-          subtitle="A transparent project wellness indicator based on available readings"
-        />
-
-        <View style={styles.wellnessCard}>
-          <View style={styles.wellnessScoreCircle}>
-            <Text style={styles.wellnessScore}>
-              {health.wellnessScore !== null ? wellnessScore : '--'}
-            </Text>
-            <Text style={styles.wellnessOutOf}>/100</Text>
-          </View>
-
-          <View style={styles.wellnessContent}>
-            <View style={styles.wellnessTitleRow}>
-              <Text style={styles.wellnessTitle}>
-                {wellnessLabel}
-              </Text>
-
-              {running && (
-                <View style={styles.updatedBadge}>
-                  <View style={styles.updatedDot} />
-                  <Text style={styles.updatedText}>Updating live</Text>
-                </View>
-              )}
-            </View>
-
-            <Text style={styles.wellnessDescription}>
-              The prototype score combines available activity, sleep,
-              hydration and recovery-related information into one simple
-              wellness indicator.
-            </Text>
-
-            <View style={styles.wellnessProgressTrack}>
               <View
                 style={[
-                  styles.wellnessProgress,
+                  styles.dot,
                   {
-                    width: `${Math.max(
-                      2,
-                      Math.min(100, wellnessScore)
-                    )}%`,
+                    backgroundColor: running ? C.green : C.muted,
                   },
                 ]}
               />
+              <Text
+                style={[
+                  styles.pillText,
+                  running && { color: C.green },
+                ]}
+              >
+                {running ? 'LIVE' : 'PAUSED'}
+              </Text>
             </View>
-
-            <Text style={styles.wellnessUpdated}>
-              {health.wellnessScore !== null
-                ? `Latest score • ${freshness}`
-                : 'Waiting for enough health data'}
-            </Text>
           </View>
-        </View>
 
-        {/* SIGNALS */}
-        <SectionHeading
-          eyebrow="SYSTEM STATUS"
-          title="Monitoring signals"
-          subtitle="Current data availability"
-        />
-
-        <View style={styles.signalCard}>
-          <SignalRow
-            icon="⌚"
-            title="Wearable connection"
-            value={running ? 'Demo stream active' : 'Monitoring paused'}
-            active={running}
-          />
-
-          <SignalRow
-            icon="♥"
-            title="Heart rate"
-            value={
-              health.heartRate !== null ? 'Receiving' : 'Waiting'
-            }
-            active={health.heartRate !== null}
-          />
-
-          <SignalRow
-            icon="🫁"
-            title="Oxygen saturation"
-            value={
-              health.oxygenSaturation !== null
-                ? 'Receiving'
-                : 'Waiting'
-            }
-            active={health.oxygenSaturation !== null}
-          />
-
-          <SignalRow
-            icon="📡"
-            title="Health data stream"
-            value={running ? 'Live updates' : 'Stopped'}
-            active={running}
-            last
-          />
-        </View>
-
-        {/* AI HEALTH SIGNAL */}
-        <View style={styles.aiCard}>
-          <View style={styles.aiHeader}>
-            <View style={styles.aiIcon}>
-              <Text style={styles.aiIconText}>✦</Text>
-            </View>
-
-            <View style={styles.aiHeaderText}>
-              <View style={styles.aiEyebrowRow}>
-                <Text style={styles.aiEyebrow}>AI HEALTH SIGNAL</Text>
-
+          {/* DEVICE + STATUS */}
+          <View style={[styles.topGrid, isWide && styles.topGridWide]}>
+            <View
+              style={[
+                styles.deviceCard,
+                isWide && styles.deviceCardWide,
+              ]}
+            >
+              <View style={styles.deviceHeader}>
                 <View
                   style={[
-                    styles.aiContextBadge,
-                    running
-                      ? styles.aiContextBadgeLive
-                      : styles.aiContextBadgeWaiting,
+                    styles.deviceIcon,
+                    running && styles.deviceIconLive,
                   ]}
                 >
-                  <View
-                    style={[
-                      styles.aiContextDot,
-                      running && styles.aiContextDotLive,
-                    ]}
-                  />
-                  <Text
-                    style={[
-                      styles.aiContextText,
-                      running && styles.aiContextTextLive,
-                    ]}
-                  >
-                    {running ? 'LIVE CONTEXT' : 'WAITING'}
+                  <Text style={styles.deviceIconText}>⌚</Text>
+                </View>
+
+                <View style={styles.deviceCopy}>
+                  <View style={styles.deviceNameRow}>
+                    <Text style={styles.deviceName}>
+                      {health.deviceName || 'Demo Wearable'}
+                    </Text>
+
+                    <View
+                      style={[
+                        styles.pill,
+                        running ? styles.pillLive : styles.pillIdle,
+                      ]}
+                    >
+                      <View
+                        style={[
+                          styles.dot,
+                          {
+                            backgroundColor: running
+                              ? C.green
+                              : C.muted,
+                          },
+                        ]}
+                      />
+                      <Text
+                        style={[
+                          styles.pillText,
+                          running && { color: C.green },
+                        ]}
+                      >
+                        {running ? 'Monitoring' : 'Paused'}
+                      </Text>
+                    </View>
+                  </View>
+
+                  <Text style={styles.bodyMuted}>
+                    {running
+                      ? 'Simulated wearable values are updating in real time.'
+                      : 'Start the demo stream to experience continuous health updates.'}
                   </Text>
                 </View>
               </View>
 
-              <Text style={styles.aiTitle}>
-                Your live health context
+              <View style={styles.divider} />
+
+              <View style={styles.sessionRow}>
+                <View>
+                  <Text style={styles.caption}>
+                    MONITORING SESSION
+                  </Text>
+                  <Text style={styles.sessionTime}>
+                    {sessionDuration}
+                  </Text>
+                </View>
+
+                <View style={styles.sessionMeta}>
+                  <Text style={styles.freshness}>{freshness}</Text>
+                  <Text style={styles.caption}>SIMULATED DATA</Text>
+                </View>
+              </View>
+
+              <Pressable
+                accessibilityRole="button"
+                accessibilityLabel={
+                  running
+                    ? 'Stop health monitoring'
+                    : 'Start health monitoring'
+                }
+                onPress={toggleMonitoring}
+                style={({ pressed }) => [
+                  styles.monitorButton,
+                  running && styles.monitorButtonStop,
+                  pressed && styles.pressed,
+                ]}
+              >
+                <Text style={styles.monitorButtonIcon}>
+                  {running ? '■' : '▶'}
+                </Text>
+                <Text style={styles.monitorButtonText}>
+                  {running
+                    ? 'Stop monitoring'
+                    : 'Start live monitoring'}
+                </Text>
+              </Pressable>
+            </View>
+
+            <View
+              style={[
+                styles.statusCard,
+                isWide && styles.statusCardWide,
+              ]}
+            >
+              <View style={styles.statusHeader}>
+                <View style={{ flex: 1 }}>
+                  <Text style={styles.statusEyebrow}>
+                    MONITORING STATUS
+                  </Text>
+                  <Text style={styles.statusTitle}>
+                    {running
+                      ? 'Everything is updating'
+                      : 'Ready when you are'}
+                  </Text>
+                </View>
+
+                <View style={styles.statusCheck}>
+                  <Text style={styles.statusCheckText}>
+                    {running ? '✓' : '○'}
+                  </Text>
+                </View>
+              </View>
+
+              <StatusRow
+                label="Wearable stream"
+                value={running ? 'Active' : 'Paused'}
+                active={running}
+              />
+              <StatusRow
+                label="Health context"
+                value={hasHealthData ? 'Available' : 'Waiting'}
+                active={hasHealthData}
+              />
+              <StatusRow
+                label="AI context"
+                value={hasHealthData ? 'Ready' : 'Waiting'}
+                active={hasHealthData}
+              />
+
+              <Text style={styles.statusFooter}>
+                Latest values are shared with the dashboard and AI assistant.
               </Text>
             </View>
           </View>
 
-          <Text style={styles.aiFreshness}>
-            {running
-              ? `Context available • ${freshness}`
-              : 'Start monitoring to provide live context'}
-          </Text>
-
-          <Text style={styles.aiBody}>
-            {getLiveInsight(health, running)}
-          </Text>
-
-          <Pressable
-            style={({ pressed }) => [
-              styles.aiButton,
-              pressed && styles.aiButtonPressed,
-            ]}
-            onPress={() => router.push('/chatbot')}
-          >
-            <View style={styles.aiButtonContent}>
-              <Text style={styles.aiButtonText}>
-                Ask AI about my health
-              </Text>
-              <Text style={styles.aiButtonSubtext}>
-                Use the latest available health context
+          {/* DEMO NOTICE */}
+          <View style={styles.demoNotice}>
+            <View style={styles.demoIcon}>
+              <Text style={styles.demoIconText}>i</Text>
+            </View>
+            <View style={{ flex: 1 }}>
+              <View style={styles.deviceNameRow}>
+                <Text style={styles.cardHeading}>
+                  Demo wearable simulation
+                </Text>
+                <Text style={styles.simulatedBadge}>SIMULATED</Text>
+              </View>
+              <Text style={styles.bodyMuted}>
+                These values are generated by the prototype simulation. They do
+                not come from a physical wearable and are not clinical measurements.
               </Text>
             </View>
+          </View>
 
-            <Text style={styles.aiButtonArrow}>→</Text>
-          </Pressable>
-        </View>
+          {/* HEART RATE */}
+          <SectionHeading
+            eyebrow="PRIMARY SIGNAL"
+            title="Heart rate"
+            subtitle="Your current simulated heart-rate reading"
+          />
 
-        {/* BOTTOM ACTIONS */}
-        <View style={styles.bottomActions}>
-          <Pressable
-            style={({ pressed }) => [
-              styles.secondaryAction,
-              pressed && styles.secondaryActionPressed,
-            ]}
-            onPress={() => router.push('/health-data')}
-          >
-            <Text style={styles.secondaryActionIcon}>＋</Text>
+          <View style={styles.heartCard}>
+            <View
+              style={[
+                styles.heartTop,
+                !isWide && styles.heartTopCompact,
+              ]}
+            >
+              <View style={styles.heartIdentity}>
+                <View style={styles.heartIconCircle}>
+                  <Text style={styles.heartIcon}>♥</Text>
+                </View>
 
-            <View style={styles.secondaryActionContent}>
-              <Text style={styles.secondaryActionTitle}>
-                Add health data
-              </Text>
-              <Text style={styles.secondaryActionSubtitle}>
-                Record manual readings
-              </Text>
+                <View style={styles.heartCopy}>
+                  <Text style={styles.caption}>CURRENT HEART RATE</Text>
+                  <View style={styles.valueRow}>
+                    <Text style={styles.heartValue}>
+                      {health.heartRate ?? '--'}
+                    </Text>
+                    <Text style={styles.valueUnit}>BPM</Text>
+                  </View>
+                  <Text
+                    style={[
+                      styles.readingStatus,
+                      { color: heartStatus.color },
+                    ]}
+                  >
+                    ● {heartStatus.label}
+                  </Text>
+                </View>
+              </View>
+
+              <View style={styles.heartMeta}>
+                <Text
+                  style={[
+                    styles.simulatedBadge,
+                    running && styles.liveBadge,
+                  ]}
+                >
+                  {running ? '● LIVE' : 'PAUSED'}
+                </Text>
+                <Text style={styles.freshness}>{freshness}</Text>
+              </View>
             </View>
 
-            <Text style={styles.secondaryActionArrow}>→</Text>
-          </Pressable>
+            <View style={styles.chartCard}>
+              <View style={styles.chartHeader}>
+                <View>
+                  <Text style={styles.caption}>
+                    SIGNAL VISUALISATION
+                  </Text>
+                  <Text style={styles.cardHeading}>
+                    Prototype live signal
+                  </Text>
+                </View>
+                <Text
+                  style={[
+                    styles.chartStatus,
+                    { color: running ? C.green : C.muted },
+                  ]}
+                >
+                  {running ? 'Updating' : 'Waiting'}
+                </Text>
+              </View>
 
-          <Pressable
-            style={({ pressed }) => [
-              styles.secondaryAction,
-              pressed && styles.secondaryActionPressed,
+              <MiniHeartChart
+                active={running}
+                values={heartRateHistory}
+              />
+
+              <View style={styles.chartFooter}>
+                <Text style={styles.caption}>
+                  Session readings only — not historical clinical data
+                </Text>
+                <Text style={styles.chartLegend}>● Simulated</Text>
+              </View>
+            </View>
+          </View>
+
+          {/* METRICS */}
+          <SectionHeading
+            eyebrow="LIVE READINGS"
+            title="Current health metrics"
+            subtitle="The latest values available from the shared health state"
+          />
+
+          <View style={styles.metricsGrid}>
+            <LiveMetricCard
+              icon="🫁"
+              label="Oxygen"
+              value={
+                health.oxygenSaturation !== null
+                  ? String(health.oxygenSaturation)
+                  : '--'
+              }
+              unit="%"
+              status={
+                health.oxygenSaturation !== null
+                  ? oxygenStatus.label
+                  : 'Waiting for reading'
+              }
+              statusColor={
+                health.oxygenSaturation !== null
+                  ? oxygenStatus.color
+                  : undefined
+              }
+              color="oxygen"
+              wide={isWide}
+            />
+
+            <LiveMetricCard
+              icon="🌡"
+              label="Temperature"
+              value={
+                health.temperatureC !== null
+                  ? health.temperatureC.toFixed(1)
+                  : '--'
+              }
+              unit="°C"
+              status={
+                health.temperatureC !== null
+                  ? 'Simulated reading'
+                  : 'Waiting for reading'
+              }
+              color="temperature"
+              wide={isWide}
+            />
+
+            <LiveMetricCard
+              icon="👟"
+              label="Steps"
+              value={formatNumber(health.steps)}
+              unit=""
+              status={`${progress(health.steps, health.stepGoal)}% of daily goal`}
+              color="steps"
+              progressValue={progress(health.steps, health.stepGoal)}
+              wide={isWide}
+            />
+
+            <LiveMetricCard
+              icon="🔥"
+              label="Calories"
+              value={Math.round(health.caloriesBurned).toString()}
+              unit="kcal"
+              status="Estimated activity total"
+              color="calories"
+              wide={isWide}
+            />
+
+            <LiveMetricCard
+              icon="⚡"
+              label="Active time"
+              value={Math.round(health.activeMinutes).toString()}
+              unit="min"
+              status="Movement today"
+              color="activity"
+              wide={isWide}
+            />
+
+            <LiveMetricCard
+              icon="📍"
+              label="Distance"
+              value={health.distanceKm.toFixed(2)}
+              unit="km"
+              status="Distance today"
+              color="steps"
+              wide={isWide}
+            />
+
+            <LiveMetricCard
+              icon="💧"
+              label="Hydration"
+              value={health.waterIntake.toFixed(1)}
+              unit="L"
+              status={`${progress(health.waterIntake, health.waterGoalLitres)}% of daily goal`}
+              color="water"
+              progressValue={progress(
+                health.waterIntake,
+                health.waterGoalLitres,
+              )}
+              wide={isWide}
+            />
+
+            <LiveMetricCard
+              icon="😴"
+              label="Sleep"
+              value={
+                health.sleepHours !== null
+                  ? health.sleepHours.toFixed(1)
+                  : '--'
+              }
+              unit="hrs"
+              status={`${progress(health.sleepHours ?? 0, health.sleepGoalHours)}% of target`}
+              color="sleep"
+              progressValue={progress(
+                health.sleepHours ?? 0,
+                health.sleepGoalHours,
+              )}
+              wide={isWide}
+            />
+          </View>
+
+          {/* WELLNESS SCORE */}
+          <SectionHeading
+            eyebrow="WELLNESS SUMMARY"
+            title="Today's wellness"
+            subtitle="A prototype indicator based on the available health information"
+          />
+
+          <View
+            style={[
+              styles.wellnessCard,
+              !isWide && styles.wellnessCardCompact,
             ]}
-            onPress={() => router.push('/')}
           >
-            <Text style={styles.secondaryActionIcon}>⌂</Text>
-
-            <View style={styles.secondaryActionContent}>
-              <Text style={styles.secondaryActionTitle}>
-                Back to dashboard
-              </Text>
-              <Text style={styles.secondaryActionSubtitle}>
-                View your full health overview
-              </Text>
+            <View style={styles.scoreColumn}>
+              <View style={styles.scoreRing}>
+                <View style={styles.scoreInner}>
+                  <Text style={styles.scoreValue}>
+                    {wellnessScore !== null
+                      ? Math.round(wellnessScore)
+                      : '--'}
+                  </Text>
+                  <Text style={styles.scoreOutOf}>/100</Text>
+                </View>
+              </View>
+              <Text style={styles.caption}>WELLNESS SCORE</Text>
             </View>
 
-            <Text style={styles.secondaryActionArrow}>→</Text>
-          </Pressable>
-        </View>
+            <View style={styles.wellnessCopy}>
+              <Text style={styles.wellnessLabel}>
+                {wellnessScore !== null
+                  ? wellnessLabel
+                  : 'Waiting for data'}
+              </Text>
+              <Text style={styles.cardHeading}>
+                {wellnessScore !== null
+                  ? 'Your current wellness snapshot'
+                  : 'Start monitoring to build your snapshot'}
+              </Text>
+              <Text style={styles.bodyMuted}>
+                This score uses your existing prototype calculation. It is a
+                wellness indicator, not a clinical assessment.
+              </Text>
 
-        <Text style={styles.disclaimer}>
-          Demo wellness information is for prototype and general
-          informational purposes only. It is not a medical diagnosis or
-          substitute for professional medical advice.
+              <View style={styles.progressTrack}>
+                <View
+                  style={[
+                    styles.progressFill,
+                    {
+                      width: `${
+                        wellnessScore !== null
+                          ? Math.max(0, Math.min(100, wellnessScore))
+                          : 0
+                      }%`,
+                    },
+                  ]}
+                />
+              </View>
+
+              <Text style={styles.caption}>
+  DATA COVERAGE
+</Text>
+
+<Text style={styles.bodyMuted}>
+  {availableWellnessFactors} of 4 factors available
+</Text>
+
+<View style={styles.wellnessFactors}>
+  {wellnessFactors.map((factor) => (
+    <View
+      key={factor.label}
+      style={styles.wellnessFactorRow}
+    >
+      <View style={styles.wellnessFactorCopy}>
+        <View
+          style={[
+            styles.wellnessFactorDot,
+            {
+              backgroundColor: factor.available
+                ? C.green
+                : C.muted,
+            },
+          ]}
+        />
+
+        <Text style={styles.wellnessFactorLabel}>
+          {factor.label}
         </Text>
+      </View>
+
+      <Text
+        style={[
+          styles.wellnessFactorValue,
+          !factor.available &&
+            styles.wellnessFactorUnavailable,
+        ]}
+      >
+        {factor.value}
+      </Text>
+    </View>
+  ))}
+</View>
+
+<Text style={styles.bodyMuted}>
+  The score uses available inputs in the existing prototype
+  calculation. It is a wellness indicator, not a clinical
+  assessment.
+</Text>
+            </View>
+          </View>
+
+          {/* MONITORING SIGNALS */}
+          <SectionHeading
+            eyebrow="SYSTEM STATUS"
+            title="Monitoring signals"
+            subtitle="A quick view of what the prototype currently has available"
+          />
+
+          <View style={styles.signalCard}>
+            <SignalRow
+              icon="⌚"
+              title="Wearable connection"
+              value={running ? 'Demo stream active' : 'Monitoring paused'}
+              active={running}
+            />
+            <SignalRow
+              icon="♥"
+              title="Heart rate"
+              value={
+                health.heartRate !== null
+                  ? 'Reading available'
+                  : 'Waiting for reading'
+              }
+              active={health.heartRate !== null}
+            />
+            <SignalRow
+              icon="🫁"
+              title="Oxygen saturation"
+              value={
+                health.oxygenSaturation !== null
+                  ? 'Reading available'
+                  : 'Waiting for reading'
+              }
+              active={health.oxygenSaturation !== null}
+            />
+            <SignalRow
+              icon="◌"
+              title="Health data stream"
+              value={running ? 'Live updates' : 'Stopped'}
+              active={running}
+            />
+            <SignalRow
+              icon="✦"
+              title="AI health context"
+              value={hasHealthData ? 'Available to assistant' : 'Waiting for data'}
+              active={hasHealthData}
+              last
+            />
+          </View>
+
+          {/* AI INSIGHT */}
+          <View style={styles.aiCard}>
+            <View style={styles.aiHeader}>
+              <View style={styles.aiIcon}>
+                <Text style={styles.aiIconText}>✦</Text>
+              </View>
+              <View style={{ flex: 1 }}>
+                <Text style={styles.aiEyebrow}>AI HEALTH ASSISTANT</Text>
+                <Text style={styles.aiTitle}>Your health context</Text>
+              </View>
+              <Text style={styles.aiBadge}>
+                {running ? 'LIVE CONTEXT' : 'WAITING'}
+              </Text>
+            </View>
+
+            <Text style={styles.aiFreshness}>
+              {running
+                ? `Latest context · ${freshness}`
+                : 'Start monitoring to provide live context'}
+            </Text>
+            <Text style={styles.aiBody}>
+              {getLiveInsight(health, running)}
+            </Text>
+
+            <Pressable
+              accessibilityRole="button"
+              accessibilityLabel="Ask AI about my health"
+              onPress={() => router.push('/chatbot')}
+              style={({ pressed }) => [
+                styles.aiButton,
+                pressed && styles.pressed,
+              ]}
+            >
+              <View style={styles.aiButtonIcon}>
+                <Text style={styles.aiButtonIconText}>✦</Text>
+              </View>
+              <View style={{ flex: 1 }}>
+                <Text style={styles.aiButtonTitle}>
+                  Ask AI about my health
+                </Text>
+                <Text style={styles.aiButtonSubtitle}>
+                  Use the latest available health context
+                </Text>
+              </View>
+              <Text style={styles.arrow}>→</Text>
+            </Pressable>
+          </View>
+
+          {/* QUICK ACTIONS */}
+          <View style={styles.actions}>
+            <ActionCard
+              icon="＋"
+              title="Add health data"
+              subtitle="Record a manual wellness reading"
+              onPress={() => router.push('/health-data')}
+            />
+            <ActionCard
+              icon="✦"
+              title="Talk to AI"
+              subtitle="Ask about your current wellness context"
+              onPress={() => router.push('/chatbot')}
+            />
+            <ActionCard
+              icon="⌂"
+              title="Dashboard"
+              subtitle="Return to your health overview"
+              onPress={() => router.push('/')}
+            />
+          </View>
+
+          {/* DISCLAIMER */}
+          <View style={styles.disclaimer}>
+            <Text style={styles.disclaimerIcon}>i</Text>
+            <Text style={styles.disclaimerText}>
+              Demo wellness information is for general informational purposes
+              only. Simulated readings are not clinical measurements. This
+              application does not provide a medical diagnosis or replace
+              professional medical advice.
+            </Text>
+          </View>
+        </View>
       </ScrollView>
     </SafeAreaView>
   );
 }
-
-/* -------------------------------------------------------------------------- */
-/* COMPONENTS                                                                 */
-/* -------------------------------------------------------------------------- */
 
 function SectionHeading({
   eyebrow,
@@ -768,6 +930,38 @@ function SectionHeading({
   );
 }
 
+function StatusRow({
+  label,
+  value,
+  active,
+}: {
+  label: string;
+  value: string;
+  active: boolean;
+}) {
+  return (
+    <View style={styles.statusRow}>
+      <View style={styles.statusRowLabel}>
+        <View
+          style={[
+            styles.dot,
+            { backgroundColor: active ? C.green : C.muted },
+          ]}
+        />
+        <Text style={styles.statusRowText}>{label}</Text>
+      </View>
+      <Text
+        style={[
+          styles.statusRowValue,
+          active && { color: C.green },
+        ]}
+      >
+        {value}
+      </Text>
+    </View>
+  );
+}
+
 function LiveMetricCard({
   icon,
   label,
@@ -776,7 +970,8 @@ function LiveMetricCard({
   status,
   statusColor,
   color,
-  progress: progressValue,
+  progressValue,
+  wide,
 }: {
   icon: string;
   label: string;
@@ -785,72 +980,58 @@ function LiveMetricCard({
   status: string;
   statusColor?: string;
   color: MetricColor;
-  progress?: number;
+  progressValue?: number;
+  wide: boolean;
 }) {
   const accent = metricColors[color];
 
   return (
-    <View style={styles.metricCard}>
-      <View style={styles.metricCardTop}>
+    <View
+      style={[
+        styles.metricCard,
+        wide ? styles.metricWide : styles.metricMobile,
+      ]}
+    >
+      <View style={styles.metricTop}>
         <View
           style={[
             styles.metricIcon,
-            { backgroundColor: `${accent}15` },
+            { backgroundColor: `${accent}20` },
           ]}
         >
           <Text style={styles.metricIconText}>{icon}</Text>
         </View>
-
-        <View
-          style={[
-            styles.metricIndicator,
-            { backgroundColor: `${accent}18` },
-          ]}
-        >
-          <View
-            style={[
-              styles.metricIndicatorDot,
-              { backgroundColor: accent },
-            ]}
-          />
-        </View>
+        <View style={[styles.metricDot, { backgroundColor: accent }]} />
       </View>
 
       <Text style={styles.metricLabel}>{label}</Text>
-
       <View style={styles.metricValueRow}>
         <Text style={styles.metricValue}>{value}</Text>
-
-        {unit ? (
-          <Text style={styles.metricUnit}>{unit}</Text>
-        ) : null}
+        {!!unit && <Text style={styles.metricUnit}>{unit}</Text>}
       </View>
 
       <Text
         style={[
           styles.metricStatus,
-          statusColor ? { color: statusColor } : null,
+          statusColor && { color: statusColor },
         ]}
       >
         {status}
       </Text>
 
-      {progressValue !== undefined ? (
+      {progressValue !== undefined && (
         <View style={styles.metricProgressTrack}>
           <View
             style={[
-              styles.metricProgress,
+              styles.metricProgressFill,
               {
-                width: `${Math.min(
-                  100,
-                  Math.max(0, progressValue)
-                )}%`,
+                width: `${Math.max(0, Math.min(100, progressValue))}%`,
                 backgroundColor: accent,
               },
             ]}
           />
         </View>
-      ) : null}
+      )}
     </View>
   );
 }
@@ -869,47 +1050,33 @@ function SignalRow({
   last?: boolean;
 }) {
   return (
-    <View
-      style={[
-        styles.signalRow,
-        !last && styles.signalRowBorder,
-      ]}
-    >
-      <View style={styles.signalLeft}>
-        <View
-          style={[
-            styles.signalIcon,
-            active && styles.signalIconActive,
-          ]}
-        >
+    <View style={[styles.signalRow, !last && styles.signalRowBorder]}>
+      <View style={styles.signalRowLeft}>
+        <View style={[styles.signalIcon, active && styles.signalIconActive]}>
           <Text style={styles.signalIconText}>{icon}</Text>
         </View>
-
-        <View style={styles.signalCopy}>
+        <View style={{ flex: 1 }}>
           <Text style={styles.signalTitle}>{title}</Text>
-          <Text style={styles.signalValue}>{value}</Text>
+          <Text style={styles.bodyMuted}>{value}</Text>
         </View>
       </View>
 
       <View
         style={[
-          styles.signalStatus,
-          active
-            ? styles.signalStatusActive
-            : styles.signalStatusInactive,
+          styles.signalBadge,
+          active ? styles.signalBadgeActive : styles.signalBadgeIdle,
         ]}
       >
         <View
           style={[
-            styles.signalStatusDot,
-            active && styles.signalStatusDotActive,
+            styles.dot,
+            { backgroundColor: active ? C.green : C.muted },
           ]}
         />
-
         <Text
           style={[
-            styles.signalStatusText,
-            active && styles.signalStatusTextActive,
+            styles.signalBadgeText,
+            active && { color: C.green },
           ]}
         >
           {active ? 'Ready' : 'Waiting'}
@@ -919,41 +1086,94 @@ function SignalRow({
   );
 }
 
-function MiniHeartChart({ active }: { active: boolean }) {
-  /*
-   * This is deliberately a visual prototype signal rather than
-   * a fabricated clinical history. The real source remains the
-   * shared health state.
-   */
-  const bars = active
-    ? [38, 52, 44, 68, 54, 76, 62, 84, 58, 72, 64, 90, 68, 78, 60]
-    : [32, 32, 32, 32, 32, 32, 32, 32, 32, 32, 32, 32, 32, 32, 32];
-
+function ActionCard({
+  icon,
+  title,
+  subtitle,
+  onPress,
+}: {
+  icon: string;
+  title: string;
+  subtitle: string;
+  onPress: () => void;
+}) {
   return (
-    <View style={styles.chart}>
-      {bars.map((height, index) => (
-        <View
-          key={index}
-          style={[
-            styles.chartBar,
-            {
-              height,
-              opacity: active ? 0.35 + index / 35 : 0.18,
-            },
-          ]}
-        />
-      ))}
-
-      <View style={styles.chartLine}>
-        <View style={styles.chartLineSegment} />
+    <Pressable
+      accessibilityRole="button"
+      accessibilityLabel={title}
+      onPress={onPress}
+      style={({ pressed }) => [
+        styles.actionCard,
+        pressed && styles.pressed,
+      ]}
+    >
+      <View style={styles.actionIcon}>
+        <Text style={styles.actionIconText}>{icon}</Text>
       </View>
-    </View>
+      <View style={{ flex: 1 }}>
+        <Text style={styles.actionTitle}>{title}</Text>
+        <Text style={styles.actionSubtitle}>{subtitle}</Text>
+      </View>
+      <Text style={styles.arrow}>→</Text>
+    </Pressable>
   );
 }
 
-/* -------------------------------------------------------------------------- */
-/* HELPERS                                                                    */
-/* -------------------------------------------------------------------------- */
+/**
+ * Displays only heart-rate readings captured during this monitoring session.
+ * These values are generated by the existing demo stream, not a physical device.
+ */
+function MiniHeartChart({
+  active,
+  values,
+}: {
+  active: boolean;
+  values: number[];
+}) {
+  const minRate = values.length > 0 ? Math.min(...values) : 0;
+  const maxRate = values.length > 0 ? Math.max(...values) : 0;
+  const range = Math.max(maxRate - minRate, 1);
+
+  return (
+    <View style={styles.chart}>
+      <View style={[styles.chartGridLine, { top: 20 }]} />
+      <View style={[styles.chartGridLine, { top: 52 }]} />
+      <View style={[styles.chartGridLine, { bottom: 8 }]} />
+
+      {values.length > 0 ? (
+        <View style={styles.chartBars}>
+          {values.map((rate, index) => {
+            const normalized = (rate - minRate) / range;
+            const height = 20 + normalized * 60;
+
+            return (
+              <View
+                key={`${index}-${rate}`}
+                style={[
+                  styles.chartBar,
+                  {
+                    height,
+                    opacity:
+                      0.45 +
+                      (index / Math.max(values.length - 1, 1)) * 0.55,
+                  },
+                ]}
+              />
+            );
+          })}
+        </View>
+      ) : (
+        <View style={styles.chartEmpty}>
+          <Text style={styles.chartEmptyText}>
+            {active
+              ? 'Collecting session readings…'
+              : 'Start monitoring to collect readings'}
+          </Text>
+        </View>
+      )}
+    </View>
+  );
+}
 
 function formatNumber(value: number) {
   return Math.round(value).toLocaleString();
@@ -961,1320 +1181,320 @@ function formatNumber(value: number) {
 
 function progress(value: number, goal: number) {
   if (!goal || goal <= 0) return 0;
-
-  return Math.round(
-    Math.min(100, (value / goal) * 100)
-  );
+  return Math.round(Math.min(100, Math.max(0, (value / goal) * 100)));
 }
 
 function getFreshnessLabel(lastUpdated: string | null) {
-  if (!lastUpdated) {
-    return 'Waiting for health data';
-  }
+  if (!lastUpdated) return 'Waiting for health data';
 
   const updatedAt = new Date(lastUpdated).getTime();
-
-  if (!Number.isFinite(updatedAt)) {
-    return 'Waiting for health data';
-  }
+  if (!Number.isFinite(updatedAt)) return 'Waiting for health data';
 
   const secondsAgo = Math.max(
     0,
-    Math.floor((Date.now() - updatedAt) / 1000)
+    Math.floor((Date.now() - updatedAt) / 1000),
   );
 
-  if (secondsAgo < 5) {
-    return 'Updated just now';
-  }
-
-  if (secondsAgo < 60) {
-    return `Updated ${secondsAgo}s ago`;
-  }
+  if (secondsAgo < 5) return 'Updated just now';
+  if (secondsAgo < 60) return `Updated ${secondsAgo}s ago`;
 
   const minutesAgo = Math.floor(secondsAgo / 60);
-
-  if (minutesAgo < 60) {
-    return `Updated ${minutesAgo}m ago`;
-  }
+  if (minutesAgo < 60) return `Updated ${minutesAgo}m ago`;
 
   return 'Health data may be out of date';
 }
 
 function getHeartStatus(value: number | null) {
   if (value === null) {
-    return {
-      label: 'Waiting for reading',
-      color: colors.textMuted,
-    };
+    return { label: 'Waiting for reading', color: C.muted };
   }
 
   if (value >= 60 && value <= 100) {
-    return {
-      label: 'Within prototype reference',
-      color: colors.success,
-    };
+    return { label: 'Within prototype reference', color: C.green };
   }
 
-  return {
-    label: 'Outside prototype reference',
-    color: colors.warning,
-  };
+  return { label: 'Outside prototype reference', color: C.orange };
 }
 
 function getOxygenStatus(value: number | null) {
   if (value === null) {
-    return {
-      label: 'Waiting',
-      color: colors.textMuted,
-    };
+    return { label: 'Waiting', color: C.muted };
   }
 
   if (value >= 95) {
-    return {
-      label: 'Within prototype reference',
-      color: colors.success,
-    };
+    return { label: 'Within prototype reference', color: C.green };
   }
 
-  return {
-    label: 'Review reading',
-    color: colors.warning,
-  };
+  return { label: 'Review reading', color: C.orange };
 }
 
-function getLiveInsight(
-  health: HealthState,
-  running: boolean
-) {
+function getLiveInsight(health: HealthState, running: boolean) {
   if (!running) {
-    return 'Start monitoring to let the assistant use your latest simulated wearable readings as part of your health context.';
+    return 'Start monitoring to let the assistant use the latest simulated wearable readings as part of your wellness context.';
   }
 
-  if (
-    health.heartRate !== null &&
-    health.heartRate > 100
-  ) {
-    return 'Your current simulated heart-rate reading is above the simple prototype reference range. Slow down if you are active and pay attention to how you feel. If you feel unwell, seek appropriate professional advice.';
+  if (health.heartRate !== null && health.heartRate > 100) {
+    return 'The current simulated heart-rate reading is above the simple prototype reference range. If you are active, allow yourself time to recover and pay attention to how you feel.';
   }
 
-  if (
-    health.sleepHours !== null &&
-    health.sleepHours < 6
-  ) {
+  if (health.sleepHours !== null && health.sleepHours < 6) {
     return 'Your available sleep data is below the target used by this prototype. Recovery and consistent sleep could be a useful focus today.';
   }
 
-  if (
-    health.waterIntake > 0 &&
-    health.waterIntake < 1.5
-  ) {
+  if (health.waterIntake > 0 && health.waterIntake < 1.5) {
     return 'Your current hydration is below the daily target used by this prototype. Consider drinking water regularly throughout the day.';
   }
 
-  if (
-    health.steps > 0 &&
-    health.steps >= health.stepGoal
-  ) {
+  if (health.steps > 0 && health.steps >= health.stepGoal) {
     return 'You have reached your current activity target. Keep balancing movement with hydration and recovery.';
   }
 
-  return 'Your live monitoring session is active. The latest simulated readings are being shared across the health dashboard and can be used by the AI assistant.';
+  if (health.wellnessScore !== null && health.wellnessScore >= 75) {
+    return 'Your current wellness snapshot is positive across the available prototype data. Keep building consistency across activity, hydration and recovery.';
+  }
+
+  return 'Your live monitoring session is active. The latest simulated readings are shared across the health dashboard and can be used by the AI assistant.';
 }
 
-/* -------------------------------------------------------------------------- */
-/* STYLES                                                                     */
-/* -------------------------------------------------------------------------- */
-
 const styles = StyleSheet.create({
-  safeArea: {
-    flex: 1,
-    backgroundColor: colors.background,
-  },
+  safeArea: { flex: 1, backgroundColor: C.bg },
+  container: { flex: 1, backgroundColor: C.bg },
+  content: { paddingTop: 24, paddingBottom: 50 },
+  shell: { width: '100%', maxWidth: 1180, alignSelf: 'center' },
+  pressed: { opacity: 0.78, transform: [{ scale: 0.99 }] },
 
-  container: {
-    flex: 1,
-    backgroundColor: colors.background,
-  },
-
-  content: {
-    paddingHorizontal: spacing.screenHorizontal,
-    paddingTop: spacing.lg,
-    paddingBottom: 40,
-  },
-
-  pressed: {
-    opacity: 0.78,
-    transform: [{ scale: 0.98 }],
-  },
-
-  /* HEADER */
-
-  header: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    marginBottom: spacing.lg,
-  },
-
+  header: { flexDirection: 'row', alignItems: 'center', marginBottom: 24 },
   backButton: {
-    width: 44,
-    height: 44,
-    borderRadius: 14,
-    backgroundColor: colors.surface,
+    width: 46,
+    height: 46,
+    borderRadius: 15,
+    backgroundColor: C.card,
     borderWidth: 1,
-    borderColor: colors.border,
+    borderColor: C.border,
     alignItems: 'center',
     justifyContent: 'center',
-    ...shadows.card,
   },
+  backIcon: { fontSize: 31, lineHeight: 31, color: C.text, marginTop: -3 },
+  headerCenter: { flex: 1, minWidth: 0, marginLeft: 14 },
+  eyebrowRow: { flexDirection: 'row', alignItems: 'center', marginBottom: 3 },
+  eyebrow: { color: C.green, fontSize: 9, fontWeight: '900', letterSpacing: 1.2 },
+  dot: { width: 6, height: 6, borderRadius: 3, marginRight: 6 },
+  headerTitle: { fontSize: 25, lineHeight: 31, fontWeight: '900', color: C.text },
+  headerSubtitle: { fontSize: 11, lineHeight: 17, color: C.secondary, marginTop: 3 },
+  pill: { flexDirection: 'row', alignItems: 'center', borderRadius: 20, paddingHorizontal: 9, paddingVertical: 6 },
+  pillLive: { backgroundColor: C.greenBg },
+  pillIdle: { backgroundColor: C.card2 },
+  pillText: { fontSize: 9, fontWeight: '900', color: C.secondary },
 
-  backIcon: {
-    fontSize: 30,
-    lineHeight: 30,
-    color: colors.textStrong,
-    marginTop: -3,
-  },
-
-  headerCenter: {
-    flex: 1,
-    marginLeft: 13,
-  },
-
-  headerTitle: {
-    ...typography.h1,
-    color: colors.textStrong,
-  },
-
-  headerSubtitle: {
-    ...typography.bodySmall,
-    color: colors.textMuted,
-    marginTop: 2,
-  },
-
-  headerStatus: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 6,
-    backgroundColor: colors.surfaceMuted,
-    paddingHorizontal: 10,
-    paddingVertical: 7,
-    borderRadius: radii.pill,
-  },
-
-  headerStatusLive: {
-    backgroundColor: colors.successLight,
-  },
-
-  headerStatusDot: {
-    width: 7,
-    height: 7,
-    borderRadius: 99,
-    backgroundColor: colors.offline,
-  },
-
-  headerStatusDotLive: {
-    backgroundColor: colors.live,
-  },
-
-  headerStatusText: {
-    ...typography.caption,
-    fontWeight: '800',
-    color: colors.textMuted,
-  },
-
-  headerStatusTextLive: {
-    color: colors.success,
-  },
-
-  /* DEVICE HERO */
-
-  deviceHero: {
-    backgroundColor: colors.surface,
-    borderRadius: radii.xxl,
+  topGrid: { width: '100%' },
+  topGridWide: { flexDirection: 'row', alignItems: 'stretch', gap: 12 },
+  deviceCard: {
+    backgroundColor: C.card,
+    borderRadius: 22,
     borderWidth: 1,
-    borderColor: colors.border,
-    padding: spacing.xl,
-    marginBottom: spacing.md,
-    ...shadows.elevated,
+    borderColor: C.border,
+    padding: 18,
+    marginBottom: 12,
   },
-
-  deviceHeroTop: {
-    flexDirection: 'row',
-    alignItems: 'center',
-  },
-
+  deviceCardWide: { flex: 1.4, marginBottom: 0 },
+  deviceHeader: { flexDirection: 'row', alignItems: 'center' },
   deviceIcon: {
-    width: 58,
-    height: 58,
-    borderRadius: 19,
-    backgroundColor: colors.primaryLight,
+    width: 56,
+    height: 56,
+    borderRadius: 18,
+    backgroundColor: C.card2,
     alignItems: 'center',
     justifyContent: 'center',
   },
-
-  deviceIconLive: {
-    backgroundColor: colors.successLight,
-  },
-
-  deviceIconText: {
-    fontSize: 27,
-  },
-
-  deviceHeroInfo: {
-    flex: 1,
-    marginLeft: 15,
-  },
-
-  deviceNameRow: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    flexWrap: 'wrap',
-    gap: 8,
-  },
-
-  deviceName: {
-    ...typography.h3,
-    color: colors.textStrong,
-  },
-
-  connectedBadge: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    paddingHorizontal: 8,
-    paddingVertical: 4,
-    borderRadius: radii.pill,
-    backgroundColor: colors.surfaceMuted,
-  },
-
-  connectedBadgeLive: {
-    backgroundColor: colors.successLight,
-  },
-
-  connectedBadgeOffline: {
-    backgroundColor: colors.surfaceMuted,
-  },
-
-  connectedDot: {
-    width: 6,
-    height: 6,
-    borderRadius: 99,
-    backgroundColor: colors.offline,
-    marginRight: 5,
-  },
-
-  connectedDotLive: {
-    backgroundColor: colors.live,
-  },
-
-  connectedText: {
-    ...typography.caption,
-    color: colors.textMuted,
-    fontWeight: '700',
-  },
-
-  connectedTextLive: {
-    color: colors.success,
-  },
-
-  deviceDescription: {
-    ...typography.bodySmall,
-    color: colors.textMuted,
-    marginTop: 5,
-    lineHeight: 18,
-  },
-
-  deviceHeroDivider: {
-    height: 1,
-    backgroundColor: colors.border,
-    marginVertical: spacing.lg,
-  },
-
-  sessionRow: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'space-between',
-    gap: 12,
-  },
-
-  sessionInfo: {
-    flex: 1,
-  },
-
-  sessionLabel: {
-    ...typography.overline,
-    color: colors.textSoft,
-  },
-
-  sessionValue: {
-    ...typography.h3,
-    color: colors.textStrong,
-    marginTop: 3,
-  },
-
-  sessionMeta: {
-    alignItems: 'flex-end',
-  },
-
-  freshnessRow: {
-    flexDirection: 'row',
-    alignItems: 'center',
-  },
-
-  freshnessDot: {
-    width: 6,
-    height: 6,
-    borderRadius: 99,
-    backgroundColor: colors.offline,
-    marginRight: 5,
-  },
-
-  freshnessDotLive: {
-    backgroundColor: colors.live,
-  },
-
-  freshnessText: {
-    ...typography.caption,
-    color: colors.textMuted,
-    fontWeight: '600',
-  },
-
-  demoLabel: {
-    ...typography.overline,
-    color: colors.textSoft,
-    marginTop: 5,
-    letterSpacing: 1,
-  },
-
+  deviceIconLive: { backgroundColor: C.greenBg },
+  deviceIconText: { fontSize: 27 },
+  deviceCopy: { flex: 1, minWidth: 0, marginLeft: 13 },
+  deviceNameRow: { flexDirection: 'row', alignItems: 'center', flexWrap: 'wrap', gap: 7 },
+  deviceName: { fontSize: 14, fontWeight: '900', color: C.text },
+  bodyMuted: { color: C.secondary, fontSize: 10, lineHeight: 16, marginTop: 4 },
+  divider: { height: 1, backgroundColor: C.border, marginVertical: 17 },
+  sessionRow: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', gap: 12 },
+  sessionMeta: { alignItems: 'flex-end' },
+  caption: { color: C.muted, fontSize: 8, lineHeight: 12, fontWeight: '900', letterSpacing: 0.8 },
+  sessionTime: { fontSize: 19, fontWeight: '900', color: C.text, marginTop: 3 },
+  freshness: { fontSize: 9, color: C.green, fontWeight: '700', marginBottom: 5 },
   monitorButton: {
-    marginTop: spacing.lg,
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'center',
-    backgroundColor: colors.primary,
-    borderRadius: radii.md,
-    paddingHorizontal: 15,
-    paddingVertical: 12,
     minHeight: 46,
-  },
-
-  monitorButtonStop: {
-    backgroundColor: colors.danger,
-  },
-
-  monitorButtonPressed: {
-    opacity: 0.88,
-    transform: [{ scale: 0.985 }],
-  },
-
-  monitorButtonDot: {
-    width: 8,
-    height: 8,
-    borderRadius: 99,
-    backgroundColor: '#FFFFFF',
-    marginRight: 7,
-  },
-
-  monitorButtonDotStop: {
-    backgroundColor: '#FFFFFF',
-  },
-
-  monitorButtonText: {
-    ...typography.button,
-    color: colors.textInverse,
-  },
-
-  /* LIVE STRIPS */
-
-  liveStrip: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'space-between',
-    backgroundColor: colors.successLight,
-    borderWidth: 1,
-    borderColor: '#CFE9E2',
-    borderRadius: radii.lg,
-    padding: spacing.md,
-    marginBottom: spacing.md,
-  },
-
-  liveStripLeft: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    flex: 1,
-  },
-
-  liveStripIcon: {
-    width: 38,
-    height: 38,
     borderRadius: 12,
-    backgroundColor: '#D7F1E9',
-    alignItems: 'center',
-    justifyContent: 'center',
-    marginRight: 10,
-  },
-
-  liveStripIconText: {
-    color: colors.success,
-    fontSize: 20,
-    fontWeight: '800',
-  },
-
-  liveStripContent: {
-    flex: 1,
-  },
-
-  liveStripTitle: {
-    ...typography.bodySmall,
-    color: colors.textStrong,
-    fontWeight: '800',
-  },
-
-  liveStripText: {
-    ...typography.caption,
-    color: colors.textMuted,
-    lineHeight: 16,
-    marginTop: 2,
-  },
-
-  livePulse: {
-    width: 22,
-    height: 22,
-    borderRadius: 11,
-    backgroundColor: '#D7F1E9',
-    alignItems: 'center',
-    justifyContent: 'center',
-    marginLeft: 8,
-  },
-
-  livePulseDot: {
-    width: 8,
-    height: 8,
-    borderRadius: 99,
-    backgroundColor: colors.live,
-  },
-
-  waitingStrip: {
+    backgroundColor: '#C96D31',
     flexDirection: 'row',
     alignItems: 'center',
-    backgroundColor: colors.surface,
-    borderWidth: 1,
-    borderColor: colors.border,
-    borderRadius: radii.lg,
-    padding: spacing.md,
-    marginBottom: spacing.md,
-  },
-
-  waitingStripIcon: {
-    width: 38,
-    height: 38,
-    borderRadius: 12,
-    backgroundColor: colors.surfaceMuted,
-    alignItems: 'center',
     justifyContent: 'center',
-    marginRight: 10,
+    paddingHorizontal: 14,
+    marginTop: 16,
   },
+  monitorButtonStop: { backgroundColor: '#A9444E' },
+  monitorButtonIcon: { color: '#FFFFFF', fontSize: 12, marginRight: 9 },
+  monitorButtonText: { color: '#FFFFFF', fontSize: 11, fontWeight: '900' },
 
-  waitingStripIconText: {
-    fontSize: 18,
-  },
-
-  waitingStripContent: {
-    flex: 1,
-  },
-
-  waitingStripTitle: {
-    ...typography.bodySmall,
-    color: colors.textStrong,
-    fontWeight: '800',
-  },
-
-  waitingStripText: {
-    ...typography.caption,
-    color: colors.textMuted,
-    lineHeight: 16,
-    marginTop: 2,
-  },
-
-  /* DEMO */
+  statusCard: { backgroundColor: '#123F3D', borderRadius: 22, padding: 18, marginBottom: 12 },
+  statusCardWide: { flex: 1, marginBottom: 0 },
+  statusHeader: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', marginBottom: 14 },
+  statusEyebrow: { color: '#9ADACD', fontSize: 8, fontWeight: '900', letterSpacing: 1.1 },
+  statusTitle: { color: '#FFFFFF', fontSize: 14, lineHeight: 20, fontWeight: '900', marginTop: 4 },
+  statusCheck: { width: 36, height: 36, borderRadius: 12, backgroundColor: 'rgba(255,255,255,0.12)', alignItems: 'center', justifyContent: 'center' },
+  statusCheckText: { color: '#FFFFFF', fontSize: 19, fontWeight: '900' },
+  statusRow: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', paddingVertical: 10, borderBottomWidth: 1, borderBottomColor: 'rgba(255,255,255,0.08)' },
+  statusRowLabel: { flexDirection: 'row', alignItems: 'center', flex: 1 },
+  statusRowText: { color: '#D4E6E3', fontSize: 10 },
+  statusRowValue: { color: '#A6C6C0', fontSize: 9, fontWeight: '900' },
+  statusFooter: { color: '#A9D3CB', fontSize: 9, lineHeight: 15, marginTop: 13 },
 
   demoNotice: {
     flexDirection: 'row',
-    backgroundColor: colors.infoLight,
+    backgroundColor: C.blueBg,
     borderWidth: 1,
-    borderColor: '#CBE4EC',
-    borderRadius: radii.lg,
-    padding: spacing.lg,
-    marginBottom: spacing.sectionGap,
+    borderColor: '#294967',
+    borderRadius: 15,
+    padding: 13,
+    marginVertical: 18,
   },
+  demoIcon: { width: 28, height: 28, borderRadius: 9, backgroundColor: '#2B6F91', alignItems: 'center', justifyContent: 'center', marginRight: 10 },
+  demoIconText: { color: '#FFFFFF', fontSize: 14, fontWeight: '900' },
+  cardHeading: { color: C.text, fontSize: 11, fontWeight: '900' },
+  simulatedBadge: { color: C.blue, backgroundColor: '#203D5A', overflow: 'hidden', borderRadius: 9, paddingHorizontal: 7, paddingVertical: 4, fontSize: 8, fontWeight: '900' },
 
-  demoNoticeIcon: {
-    width: 26,
-    height: 26,
-    borderRadius: 13,
-    backgroundColor: colors.info,
-    alignItems: 'center',
-    justifyContent: 'center',
-    marginRight: 10,
-  },
+  sectionHeading: { marginTop: 7, marginBottom: 12 },
+  sectionEyebrow: { color: C.green, fontSize: 8, fontWeight: '900', letterSpacing: 1.3, marginBottom: 4 },
+  sectionTitle: { color: C.text, fontSize: 21, lineHeight: 27, fontWeight: '900' },
+  sectionSubtitle: { color: C.secondary, fontSize: 10, lineHeight: 16, marginTop: 3 },
 
-  demoNoticeIconText: {
-    color: '#FFFFFF',
-    fontSize: 14,
-    fontWeight: '800',
-  },
+  heartCard: { backgroundColor: C.card, borderWidth: 1, borderColor: C.border, borderRadius: 22, padding: 18, marginBottom: 23 },
+  heartTop: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between' },
+  heartTopCompact: { alignItems: 'flex-start', gap: 12 },
+  heartIdentity: { flexDirection: 'row', alignItems: 'center', flex: 1, minWidth: 0 },
+  heartIconCircle: { width: 55, height: 55, borderRadius: 17, backgroundColor: '#402632', alignItems: 'center', justifyContent: 'center' },
+  heartIcon: { color: C.heart, fontSize: 26 },
+  heartCopy: { marginLeft: 12, flex: 1, minWidth: 0 },
+  valueRow: { flexDirection: 'row', alignItems: 'baseline', marginTop: 2 },
+  heartValue: { color: C.text, fontSize: 36, lineHeight: 42, fontWeight: '900', letterSpacing: -1 },
+  valueUnit: { color: C.secondary, fontSize: 10, fontWeight: '800', marginLeft: 5 },
+  readingStatus: { fontSize: 9, fontWeight: '800', marginTop: 3 },
+  heartMeta: { alignItems: 'flex-end', marginLeft: 8 },
+  liveBadge: { color: C.green, backgroundColor: C.greenBg },
+  chartCard: { backgroundColor: C.card2, borderWidth: 1, borderColor: C.border, borderRadius: 16, padding: 12, marginTop: 22 },
+  chartHeader: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center' },
+  chartStatus: { fontSize: 9, fontWeight: '900' },
+  chart: { height: 100, marginTop: 10, justifyContent: 'flex-end', overflow: 'hidden' },
+  chartGridLine: { position: 'absolute', left: 0, right: 0, height: 1, backgroundColor: C.border },
+  chartBars: { height: 85, flexDirection: 'row', alignItems: 'flex-end', justifyContent: 'space-around' },
+  chartEmpty: { flex: 1, alignItems: 'center', justifyContent: 'center' },
+  chartEmptyText: { color: C.muted, fontSize: 10, textAlign: 'center' },
+  chartBar: { width: 5, borderRadius: 5, backgroundColor: C.heart },
+  chartPulseLine: { position: 'absolute', top: '51%', left: 0, right: 0, borderTopWidth: 1, borderStyle: 'dashed', borderColor: C.heart, opacity: 0.35 },
+  chartFooter: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', marginTop: 8, gap: 8 },
+  chartLegend: { color: C.heart, fontSize: 8, fontWeight: '800' },
 
-  demoNoticeContent: {
-    flex: 1,
-  },
+  metricsGrid: { flexDirection: 'row', flexWrap: 'wrap', justifyContent: 'space-between', marginBottom: 12 },
+  metricCard: { backgroundColor: C.card, borderWidth: 1, borderColor: C.border, borderRadius: 18, padding: 14, marginBottom: 10 },
+  metricMobile: { width: '48.5%', minHeight: 150 },
+  metricWide: { width: '24%', minHeight: 158 },
+  metricTop: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', marginBottom: 12 },
+  metricIcon: { width: 38, height: 38, borderRadius: 12, alignItems: 'center', justifyContent: 'center' },
+  metricIconText: { fontSize: 18 },
+  metricDot: { width: 7, height: 7, borderRadius: 4 },
+  metricLabel: { color: C.secondary, fontSize: 10, fontWeight: '800' },
+  metricValueRow: { flexDirection: 'row', alignItems: 'baseline', marginTop: 4 },
+  metricValue: { color: C.text, fontSize: 26, lineHeight: 31, fontWeight: '900' },
+  metricUnit: { color: C.secondary, fontSize: 9, fontWeight: '800', marginLeft: 4 },
+  metricStatus: { color: C.muted, fontSize: 8, lineHeight: 13, marginTop: 5 },
+  metricProgressTrack: { height: 5, backgroundColor: '#303D56', borderRadius: 5, marginTop: 10, overflow: 'hidden' },
+  metricProgressFill: { height: 5, borderRadius: 5 },
 
-  demoNoticeTitleRow: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    flexWrap: 'wrap',
-    gap: 7,
-  },
+  wellnessCard: { backgroundColor: C.card, borderWidth: 1, borderColor: C.border, borderRadius: 22, padding: 20, flexDirection: 'row', alignItems: 'center', marginBottom: 23 },
+  wellnessCardCompact: { alignItems: 'flex-start', padding: 15 },
+  scoreColumn: { alignItems: 'center' },
+  scoreRing: { width: 108, height: 108, borderRadius: 54, borderWidth: 7, borderColor: '#267766', backgroundColor: '#193C43', alignItems: 'center', justifyContent: 'center' },
+  scoreInner: { width: 88, height: 88, borderRadius: 44, backgroundColor: C.card, alignItems: 'center', justifyContent: 'center' },
+  scoreValue: { color: C.green, fontSize: 30, lineHeight: 35, fontWeight: '900' },
+  scoreOutOf: { color: C.secondary, fontSize: 10, fontWeight: '700' },
+  wellnessCopy: { flex: 1, minWidth: 0, marginLeft: 17 },
+  wellnessLabel: { color: C.green, fontSize: 14, fontWeight: '900' },
+  progressTrack: { height: 7, backgroundColor: '#303D56', borderRadius: 6, marginTop: 13, marginBottom: 8, overflow: 'hidden' },
+  progressFill: { height: 7, backgroundColor: C.green, borderRadius: 6 },
 
-  demoNoticeTitle: {
-    ...typography.bodySmall,
-    color: colors.textStrong,
-    fontWeight: '800',
-  },
-
-  demoBadge: {
-    backgroundColor: '#DDEFF3',
-    borderRadius: radii.pill,
-    paddingHorizontal: 6,
-    paddingVertical: 3,
-  },
-
-  demoBadgeText: {
-    ...typography.overline,
-    fontSize: 8,
-    color: colors.info,
-    letterSpacing: 0.7,
-  },
-
-  demoNoticeText: {
-    ...typography.caption,
-    color: colors.textMuted,
-    lineHeight: 17,
-    marginTop: 4,
-  },
-
-  /* SECTION */
-
-  sectionHeading: {
-    marginBottom: spacing.md,
-    marginTop: spacing.xs,
-  },
-
-  sectionEyebrow: {
-    ...typography.overline,
-    color: colors.primary,
-    letterSpacing: 1.2,
-    marginBottom: 3,
-  },
-
-  sectionTitle: {
-    ...typography.h2,
-    color: colors.textStrong,
-  },
-
-  sectionSubtitle: {
-    ...typography.bodySmall,
-    color: colors.textMuted,
-    marginTop: 3,
-  },
-
-  /* HEART */
-
-  heartCard: {
-    backgroundColor: colors.surface,
-    borderRadius: radii.xxl,
-    borderWidth: 1,
-    borderColor: colors.border,
-    padding: spacing.xl,
-    marginBottom: spacing.sectionGap,
-    ...shadows.card,
-  },
-
-  heartTop: {
-    flexDirection: 'row',
-    alignItems: 'center',
-  },
-
-  heartIconCircle: {
-    width: 58,
-    height: 58,
-    borderRadius: 20,
-    backgroundColor: '#FCECEF',
-    alignItems: 'center',
-    justifyContent: 'center',
-  },
-
-  heartIcon: {
-    color: colors.heart,
-    fontSize: 27,
-  },
-
-  heartMain: {
-    flex: 1,
-    marginLeft: 15,
-  },
-
-  heartValueRow: {
-    flexDirection: 'row',
-    alignItems: 'baseline',
-  },
-
-  heartValue: {
-    fontSize: 40,
-    lineHeight: 44,
-    fontWeight: '800',
-    color: colors.textStrong,
-    letterSpacing: -1,
-  },
-
-  heartUnit: {
-    ...typography.bodySmall,
-    color: colors.textMuted,
-    marginLeft: 6,
-    fontWeight: '700',
-  },
-
-  heartStatusRow: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    marginTop: 3,
-  },
-
-  statusDot: {
-    width: 7,
-    height: 7,
-    borderRadius: 99,
-    marginRight: 6,
-  },
-
-  heartStatus: {
-    ...typography.caption,
-    fontWeight: '700',
-  },
-
-  pulseBadge: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    backgroundColor: colors.successLight,
-    borderRadius: radii.pill,
-    paddingHorizontal: 9,
-    paddingVertical: 6,
-  },
-
-  pulseDot: {
-    width: 6,
-    height: 6,
-    borderRadius: 99,
-    backgroundColor: colors.live,
-    marginRight: 5,
-  },
-
-  pulseText: {
-    ...typography.caption,
-    color: colors.success,
-    fontWeight: '800',
-  },
-
-  chartArea: {
-    height: 118,
-    marginTop: spacing.xl,
-    borderRadius: radii.lg,
-    backgroundColor: colors.surfaceSoft,
-    overflow: 'hidden',
-    paddingHorizontal: 12,
-    paddingTop: 12,
-    justifyContent: 'flex-end',
-  },
-
-  chartHeader: {
-    position: 'absolute',
-    left: 12,
-    right: 12,
-    top: 10,
-    flexDirection: 'row',
-    justifyContent: 'space-between',
-    alignItems: 'center',
-  },
-
-  chartLabel: {
-    ...typography.overline,
-    fontSize: 8,
-    color: colors.textSoft,
-    letterSpacing: 0.9,
-  },
-
-  chartLiveText: {
-    ...typography.caption,
-    color: colors.success,
-    fontWeight: '700',
-  },
-
-  chart: {
-    height: 80,
-    flexDirection: 'row',
-    alignItems: 'flex-end',
-    justifyContent: 'space-around',
-  },
-
-  chartBar: {
-    width: 7,
-    borderRadius: 5,
-    backgroundColor: colors.heart,
-  },
-
-  chartLine: {
-    position: 'absolute',
-    left: 0,
-    right: 0,
-    top: '50%',
-    height: 1,
-  },
-
-  chartLineSegment: {
-    flex: 1,
-    borderTopWidth: 1,
-    borderStyle: 'dashed',
-    borderColor: colors.borderStrong,
-  },
-
-  chartFooter: {
-    flexDirection: 'row',
-    justifyContent: 'space-between',
-    marginTop: 10,
-  },
-
-  chartFooterText: {
-    ...typography.caption,
-    color: colors.textSoft,
-  },
-
-  chartFooterValue: {
-    ...typography.caption,
-    color: colors.textMuted,
-    fontWeight: '700',
-  },
-
-  /* METRICS */
-
-  metricsGrid: {
-    flexDirection: 'row',
-    flexWrap: 'wrap',
-    justifyContent: 'space-between',
-    marginBottom: spacing.sectionGap,
-  },
-
-  metricCard: {
-    width: '48.5%',
-    minHeight: 156,
-    backgroundColor: colors.surface,
-    borderWidth: 1,
-    borderColor: colors.border,
-    borderRadius: radii.xl,
-    padding: spacing.lg,
-    marginBottom: spacing.md,
-    ...shadows.card,
-  },
-
-  metricCardTop: {
-    flexDirection: 'row',
-    justifyContent: 'space-between',
-    alignItems: 'center',
-    marginBottom: 12,
-  },
-
-  metricIcon: {
-    width: 40,
-    height: 40,
-    borderRadius: 14,
-    alignItems: 'center',
-    justifyContent: 'center',
-  },
-
-  metricIconText: {
-    fontSize: 18,
-  },
-
-  metricIndicator: {
-    width: 15,
-    height: 15,
-    borderRadius: 8,
-    alignItems: 'center',
-    justifyContent: 'center',
-  },
-
-  metricIndicatorDot: {
-    width: 5,
-    height: 5,
-    borderRadius: 99,
-  },
-
-  metricLabel: {
-    ...typography.caption,
-    color: colors.textMuted,
-    fontWeight: '700',
-  },
-
-  metricValueRow: {
-    flexDirection: 'row',
-    alignItems: 'baseline',
-    marginTop: 3,
-  },
-
-  metricValue: {
-    fontSize: 25,
-    lineHeight: 30,
-    fontWeight: '800',
-    color: colors.textStrong,
-    letterSpacing: -0.5,
-  },
-
-  metricUnit: {
-    ...typography.caption,
-    color: colors.textMuted,
-    fontWeight: '700',
-    marginLeft: 4,
-  },
-
-  metricStatus: {
-    ...typography.caption,
-    color: colors.textSoft,
-    marginTop: 3,
-  },
-
-  metricProgressTrack: {
-    height: 5,
-    backgroundColor: colors.surfaceMuted,
-    borderRadius: 99,
+  // Wellness factor breakdown
+  wellnessFactors: {
     marginTop: 12,
-    overflow: 'hidden',
-  },
-
-  metricProgress: {
-    height: 5,
-    borderRadius: 99,
-  },
-
-  /* WELLNESS */
-
-  wellnessCard: {
-    backgroundColor: colors.surface,
-    borderRadius: radii.xxl,
-    borderWidth: 1,
-    borderColor: colors.border,
-    padding: spacing.xl,
-    flexDirection: 'row',
-    alignItems: 'center',
-    marginBottom: spacing.sectionGap,
-    ...shadows.card,
-  },
-
-  wellnessScoreCircle: {
-    width: 105,
-    height: 105,
-    borderRadius: 53,
-    backgroundColor: colors.primaryLight,
-    alignItems: 'center',
-    justifyContent: 'center',
-    borderWidth: 7,
-    borderColor: '#D2ECE6',
-  },
-
-  wellnessScore: {
-    fontSize: 31,
-    lineHeight: 34,
-    fontWeight: '800',
-    color: colors.primaryDark,
-  },
-
-  wellnessOutOf: {
-    ...typography.caption,
-    color: colors.textMuted,
-    marginTop: -1,
-  },
-
-  wellnessContent: {
-    flex: 1,
-    marginLeft: 18,
-  },
-
-  wellnessTitleRow: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    flexWrap: 'wrap',
+    marginBottom: 8,
     gap: 8,
   },
-
-  wellnessTitle: {
-    ...typography.h3,
-    color: colors.textStrong,
-  },
-
-  updatedBadge: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    backgroundColor: colors.successLight,
-    paddingHorizontal: 7,
-    paddingVertical: 4,
-    borderRadius: radii.pill,
-  },
-
-  updatedDot: {
-    width: 5,
-    height: 5,
-    borderRadius: 99,
-    backgroundColor: colors.live,
-    marginRight: 5,
-  },
-
-  updatedText: {
-    ...typography.caption,
-    color: colors.success,
-    fontWeight: '700',
-  },
-
-  wellnessDescription: {
-    ...typography.bodySmall,
-    color: colors.textMuted,
-    lineHeight: 18,
-    marginTop: 6,
-  },
-
-  wellnessProgressTrack: {
-    height: 7,
-    backgroundColor: colors.surfaceMuted,
-    borderRadius: 99,
-    overflow: 'hidden',
-    marginTop: 13,
-  },
-
-  wellnessProgress: {
-    height: 7,
-    borderRadius: 99,
-    backgroundColor: colors.primary,
-  },
-
-  wellnessUpdated: {
-    ...typography.caption,
-    color: colors.textSoft,
-    marginTop: 6,
-  },
-
-  /* SIGNALS */
-
-  signalCard: {
-    backgroundColor: colors.surface,
-    borderRadius: radii.xl,
-    borderWidth: 1,
-    borderColor: colors.border,
-    paddingHorizontal: spacing.lg,
-    marginBottom: spacing.sectionGap,
-    ...shadows.card,
-  },
-
-  signalRow: {
-    minHeight: 68,
+  wellnessFactorRow: {
     flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'space-between',
+    gap: 10,
+    paddingVertical: 5,
   },
-
-  signalRowBorder: {
-    borderBottomWidth: 1,
-    borderBottomColor: colors.border,
-  },
-
-  signalLeft: {
+  wellnessFactorCopy: {
     flexDirection: 'row',
     alignItems: 'center',
     flex: 1,
   },
-
-  signalIcon: {
-    width: 38,
-    height: 38,
-    borderRadius: 12,
-    backgroundColor: colors.surfaceMuted,
-    alignItems: 'center',
-    justifyContent: 'center',
-    marginRight: 11,
+  wellnessFactorDot: {
+    width: 7,
+    height: 7,
+    borderRadius: 4,
+    marginRight: 8,
   },
-
-  signalIconActive: {
-    backgroundColor: colors.primarySoft,
-  },
-
-  signalIconText: {
-    fontSize: 16,
-  },
-
-  signalCopy: {
-    flex: 1,
-  },
-
-  signalTitle: {
-    ...typography.bodySmall,
-    color: colors.textStrong,
+  wellnessFactorLabel: {
+    color: C.secondary,
+    fontSize: 10,
     fontWeight: '700',
   },
-
-  signalValue: {
-    ...typography.caption,
-    color: colors.textMuted,
-    marginTop: 2,
-  },
-
-  signalStatus: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    paddingHorizontal: 9,
-    paddingVertical: 6,
-    borderRadius: radii.pill,
-    backgroundColor: colors.surfaceMuted,
-  },
-
-  signalStatusActive: {
-    backgroundColor: colors.successLight,
-  },
-
-  signalStatusInactive: {
-    backgroundColor: colors.surfaceMuted,
-  },
-
-  signalStatusDot: {
-    width: 6,
-    height: 6,
-    borderRadius: 99,
-    backgroundColor: colors.offline,
-    marginRight: 5,
-  },
-
-  signalStatusDotActive: {
-    backgroundColor: colors.live,
-  },
-
-  signalStatusText: {
-    ...typography.caption,
-    color: colors.textMuted,
-    fontWeight: '700',
-  },
-
-  signalStatusTextActive: {
-    color: colors.success,
-  },
-
-  /* AI */
-
-  aiCard: {
-    backgroundColor: colors.primaryDark,
-    borderRadius: radii.xxl,
-    padding: spacing.xl,
-    marginBottom: spacing.sectionGap,
-    ...shadows.elevated,
-  },
-
-  aiHeader: {
-    flexDirection: 'row',
-    alignItems: 'center',
-  },
-
-  aiIcon: {
-    width: 45,
-    height: 45,
-    borderRadius: 15,
-    backgroundColor: 'rgba(255,255,255,0.13)',
-    alignItems: 'center',
-    justifyContent: 'center',
-  },
-
-  aiIconText: {
-    color: '#FFFFFF',
-    fontSize: 22,
-  },
-
-  aiHeaderText: {
-    marginLeft: 11,
-    flex: 1,
-  },
-
-  aiEyebrowRow: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    flexWrap: 'wrap',
-    gap: 7,
-  },
-
-  aiEyebrow: {
-    ...typography.overline,
-    color: '#A9DED3',
-    letterSpacing: 1.1,
-  },
-
-  aiContextBadge: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    borderRadius: radii.pill,
-    paddingHorizontal: 6,
-    paddingVertical: 3,
-  },
-
-  aiContextBadgeLive: {
-    backgroundColor: 'rgba(255,255,255,0.13)',
-  },
-
-  aiContextBadgeWaiting: {
-    backgroundColor: 'rgba(255,255,255,0.08)',
-  },
-
-  aiContextDot: {
-    width: 5,
-    height: 5,
-    borderRadius: 99,
-    backgroundColor: 'rgba(255,255,255,0.45)',
-    marginRight: 4,
-  },
-
-  aiContextDotLive: {
-    backgroundColor: '#8FE0C8',
-  },
-
-  aiContextText: {
-    ...typography.overline,
-    fontSize: 7,
-    color: 'rgba(255,255,255,0.65)',
-    letterSpacing: 0.7,
-  },
-
-  aiContextTextLive: {
-    color: '#BDEDE2',
-  },
-
-  aiTitle: {
-    ...typography.h3,
-    color: '#FFFFFF',
-    marginTop: 3,
-  },
-
-  aiFreshness: {
-    ...typography.caption,
-    color: '#A9DED3',
-    marginTop: 13,
-  },
-
-  aiBody: {
-    ...typography.body,
-    color: '#D9EFEB',
-    lineHeight: 21,
-    marginTop: 8,
-  },
-
-  aiButton: {
-    marginTop: 18,
-    backgroundColor: '#FFFFFF',
-    borderRadius: radii.md,
-    paddingHorizontal: 14,
-    paddingVertical: 11,
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'space-between',
-  },
-
-  aiButtonPressed: {
-    opacity: 0.9,
-    transform: [{ scale: 0.985 }],
-  },
-
-  aiButtonContent: {
-    flex: 1,
-  },
-
-  aiButtonText: {
-    ...typography.button,
-    color: colors.primaryDark,
-  },
-
-  aiButtonSubtext: {
-    ...typography.caption,
-    color: colors.textMuted,
-    marginTop: 2,
-  },
-
-  aiButtonArrow: {
-    fontSize: 18,
-    fontWeight: '700',
-    color: colors.primaryDark,
-    marginLeft: 10,
-  },
-
-  /* BOTTOM ACTIONS */
-
-  bottomActions: {
-    gap: spacing.md,
-    marginBottom: spacing.xl,
-  },
-
-  secondaryAction: {
-    backgroundColor: colors.surface,
-    borderRadius: radii.lg,
-    borderWidth: 1,
-    borderColor: colors.border,
-    padding: spacing.lg,
-    flexDirection: 'row',
-    alignItems: 'center',
-    ...shadows.card,
-  },
-
-  secondaryActionPressed: {
-    opacity: 0.82,
-    transform: [{ scale: 0.99 }],
-  },
-
-  secondaryActionIcon: {
-    width: 42,
-    height: 42,
-    borderRadius: 13,
-    backgroundColor: colors.primaryLight,
-    textAlign: 'center',
-    textAlignVertical: 'center',
-    fontSize: 23,
-    color: colors.primary,
-    marginRight: 12,
-  },
-
-  secondaryActionContent: {
-    flex: 1,
-  },
-
-  secondaryActionTitle: {
-    ...typography.bodySmall,
-    color: colors.textStrong,
+  wellnessFactorValue: {
+    color: C.text,
+    fontSize: 10,
     fontWeight: '800',
+    textAlign: 'right',
+  },
+  wellnessFactorUnavailable: {
+    color: C.muted,
+    fontWeight: '600',
   },
 
-  secondaryActionSubtitle: {
-    ...typography.caption,
-    color: colors.textMuted,
-    marginTop: 2,
-  },
+  signalCard: { backgroundColor: C.card, borderRadius: 18, borderWidth: 1, borderColor: C.border, paddingHorizontal: 14, marginBottom: 23 },
+  signalRow: { minHeight: 66, flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', gap: 8 },
+  signalRowBorder: { borderBottomWidth: 1, borderBottomColor: C.border },
+  signalRowLeft: { flexDirection: 'row', alignItems: 'center', flex: 1, minWidth: 0 },
+  signalIcon: { width: 38, height: 38, borderRadius: 12, backgroundColor: C.card2, alignItems: 'center', justifyContent: 'center', marginRight: 10 },
+  signalIconActive: { backgroundColor: C.greenBg },
+  signalIconText: { fontSize: 16 },
+  signalTitle: { color: C.text, fontSize: 10, fontWeight: '900', marginBottom: 3 },
+  signalBadge: { flexDirection: 'row', alignItems: 'center', borderRadius: 12, paddingHorizontal: 8, paddingVertical: 6 },
+  signalBadgeActive: { backgroundColor: C.greenBg },
+  signalBadgeIdle: { backgroundColor: C.card2 },
+  signalBadgeText: { color: C.secondary, fontSize: 8, fontWeight: '900' },
 
-  secondaryActionArrow: {
-    fontSize: 18,
-    color: colors.textMuted,
-    fontWeight: '700',
-    marginLeft: 10,
-  },
+  aiCard: { backgroundColor: '#1B263C', borderWidth: 1, borderColor: '#34415B', borderRadius: 22, padding: 20, marginBottom: 20, overflow: 'hidden' },
+  aiHeader: { flexDirection: 'row', alignItems: 'center', gap: 11 },
+  aiIcon: { width: 45, height: 45, borderRadius: 15, backgroundColor: C.purpleBg, alignItems: 'center', justifyContent: 'center' },
+  aiIconText: { color: C.purple, fontSize: 22 },
+  aiEyebrow: { color: C.purple, fontSize: 8, fontWeight: '900', letterSpacing: 1 },
+  aiTitle: { color: C.text, fontSize: 16, fontWeight: '900', marginTop: 4 },
+  aiBadge: { color: C.purple, fontSize: 8, fontWeight: '900', backgroundColor: C.purpleBg, overflow: 'hidden', borderRadius: 10, paddingHorizontal: 8, paddingVertical: 6 },
+  aiFreshness: { color: C.secondary, fontSize: 9, marginTop: 15 },
+  aiBody: { color: '#D6DEEF', fontSize: 12, lineHeight: 20, marginTop: 9 },
+  aiButton: { minHeight: 58, borderRadius: 14, backgroundColor: '#302A4C', padding: 11, flexDirection: 'row', alignItems: 'center', marginTop: 16 },
+  aiButtonIcon: { width: 34, height: 34, borderRadius: 11, backgroundColor: '#433B68', alignItems: 'center', justifyContent: 'center', marginRight: 10 },
+  aiButtonIconText: { color: C.purple, fontSize: 17 },
+  aiButtonTitle: { color: C.text, fontSize: 10, fontWeight: '900' },
+  aiButtonSubtitle: { color: C.secondary, fontSize: 9, marginTop: 3 },
+  arrow: { color: C.purple, fontSize: 19, fontWeight: '900', marginLeft: 10 },
 
-  disclaimer: {
-    ...typography.caption,
-    color: colors.textSoft,
-    textAlign: 'center',
-    lineHeight: 17,
-    paddingHorizontal: 20,
-  },
+  actions: { gap: 10, marginBottom: 20 },
+  actionCard: { minHeight: 72, backgroundColor: C.card, borderWidth: 1, borderColor: C.border, borderRadius: 16, padding: 13, flexDirection: 'row', alignItems: 'center' },
+  actionIcon: { width: 40, height: 40, borderRadius: 12, backgroundColor: C.card2, alignItems: 'center', justifyContent: 'center', marginRight: 11 },
+  actionIconText: { color: C.green, fontSize: 19, fontWeight: '900' },
+  actionTitle: { color: C.text, fontSize: 10, fontWeight: '900' },
+  actionSubtitle: { color: C.secondary, fontSize: 9, lineHeight: 14, marginTop: 3 },
+
+  disclaimer: { flexDirection: 'row', alignItems: 'flex-start', backgroundColor: C.card2, borderWidth: 1, borderColor: C.border, borderRadius: 14, padding: 12, marginBottom: 8 },
+  disclaimerIcon: { color: C.secondary, backgroundColor: C.card, overflow: 'hidden', borderRadius: 8, width: 22, height: 22, textAlign: 'center', lineHeight: 22, fontWeight: '900', marginRight: 9 },
+  disclaimerText: { flex: 1, color: C.muted, fontSize: 9, lineHeight: 15 },
 });

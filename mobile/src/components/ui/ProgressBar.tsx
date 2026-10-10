@@ -27,19 +27,26 @@ export default function ProgressBar({
   trackColor = colors.surfaceMuted,
   fillColor = colors.primary,
 }: ProgressBarProps) {
-  const safeProgress = Math.min(
-    100,
-    Math.max(0, progress)
-  );
+  const safeProgress = Number.isFinite(progress)
+    ? Math.min(100, Math.max(0, progress))
+    : 0;
+
+  const roundedProgress = Math.round(safeProgress);
 
   return (
     <View
+      accessible
+      accessibilityRole="progressbar"
+      accessibilityValue={{
+        min: 0,
+        max: 100,
+        now: roundedProgress,
+      }}
       style={[
         styles.track,
         {
           height,
-          backgroundColor:
-            trackColor,
+          backgroundColor: trackColor,
           borderRadius: radii.pill,
         },
         style,
@@ -50,9 +57,8 @@ export default function ProgressBar({
           styles.fill,
           {
             width: `${safeProgress}%`,
-            height,
-            backgroundColor:
-              fillColor,
+            height: '100%',
+            backgroundColor: fillColor,
             borderRadius: radii.pill,
           },
         ]}
@@ -68,6 +74,6 @@ const styles = StyleSheet.create({
   },
 
   fill: {
-    minWidth: 2,
+    minWidth: 0,
   },
 });

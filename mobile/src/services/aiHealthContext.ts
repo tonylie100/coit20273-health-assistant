@@ -167,15 +167,24 @@ export function buildAIMessageContext(
   ];
 
   const deviceLine = context.device.connected
-    ? `Connected device: ${
-        context.device.name ??
-        'Health device'
+    ? `Monitoring source: ${
+        context.device.name ?? 'Health device'
       }${
         context.device.isDemo
-          ? ' (simulated demo wearable)'
-          : ''
+          ? ' (SIMULATED DEMO DATA; not a real wearable connection)'
+          : ' (reported as connected by the application)'
       }`
-    : 'Connected device: none';
+    : 'Monitoring source: no connected device; use only available manually entered or previously recorded application values.';
+
+  const missingLines = [
+    context.metrics.heartRate === null ? 'heart rate' : null,
+    context.metrics.steps <= 0 ? 'steps' : null,
+    context.metrics.sleepHours === null ? 'sleep duration' : null,
+    context.metrics.waterIntake <= 0 ? 'water intake' : null,
+    context.metrics.mood === null ? 'mood' : null,
+    context.metrics.energyLevel === null ? 'energy level' : null,
+    context.metrics.stressLevel === null ? 'stress level' : null,
+  ].filter((item): item is string => item !== null);
 
   const insightLines =
     context.insights.length > 0
@@ -191,11 +200,17 @@ export function buildAIMessageContext(
 User question:
 ${question}
 
-CURRENT REALTIME WELLNESS CONTEXT
----------------------------------
+CURRENT APPLICATION WELLNESS CONTEXT
+-------------------------------------
 ${metricLines.join('\n')}
 
 ${deviceLine}
+Data availability: ${
+    missingLines.length > 0
+      ? `No current value available for: ${missingLines.join(', ')}. Do not estimate, invent, or infer these values.`
+      : 'The listed core wellness values are available.'
+  }
+Context timestamp: ${context.updatedAt}
 
 Realtime wellness observations:
 ${insightLines}
@@ -203,19 +218,16 @@ ${insightLines}
 Context summary:
 ${context.summary}
 
-The health data above represents the latest available application state.
-Use it when relevant to the user's question.
-
-The wellness score is an application wellness heuristic and is not a
-clinically validated measurement.
-
-Provide practical general wellness information.
-Do not diagnose medical conditions.
-Do not claim that application readings confirm or rule out a medical condition.
-If the user describes urgent or potentially serious symptoms, recommend
-appropriate professional medical care.
-
-Answer the user's question naturally and directly.
+The values above are the latest values available in the app, not necessarily a complete health record.
+Personalise the answer using relevant available values and the user's question. Explain which specific values inform your suggestion when useful.
+Never present simulated demo values as real wearable measurements. If the source is marked simulated, explicitly say so when discussing those readings.
+Do not invent missing sleep, hydration, mood, energy, stress, or other measurements. Clearly state when a value is unavailable instead of assuming it is normal.
+Treat the observations as lightweight application heuristics, not medical alerts.
+The wellness score is an application heuristic and is not clinically validated. Do not describe it as a medical score or diagnosis.
+Give one or two practical, proportionate next steps rather than overwhelming the user. Avoid rigid targets unless the app provides a configured goal or the user asks for general guidance.
+Do not diagnose, prescribe treatment, or claim app readings confirm or rule out a condition. A single reading may be affected by context and measurement quality.
+If the user describes chest pain, severe breathing difficulty, fainting, signs of stroke, or another potentially urgent symptom, advise seeking urgent professional/emergency medical care rather than relying on this app.
+Answer naturally, directly, and in plain language. Do not repeat the entire data snapshot unless requested.
 `.trim();
 }
 

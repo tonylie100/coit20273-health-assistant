@@ -1,20 +1,63 @@
 import { getFirebaseIdToken } from './authService';
 
-const API_BASE_URL = process.env.EXPO_PUBLIC_API_BASE_URL 
-  || 'http://localhost:5000/api/v1';
+const CONFIGURED_API_BASE_URL =
+  process.env.EXPO_PUBLIC_API_BASE_URL || 'http://localhost:3000';
+
+/**
+ * Configure EXPO_PUBLIC_API_BASE_URL as your backend origin, for example:
+ *   http://192.168.1.20:3000
+ *
+ * A trailing /api/v1 is also accepted for compatibility with older .env files.
+ */
+const API_BASE_URL = CONFIGURED_API_BASE_URL
+  .trim()
+  .replace(/\/+$/, '')
+  .replace(/\/api\/v1$/i, '');
 
 console.log('ACTIVE API BASE URL:', API_BASE_URL);
 
+function apiUrl(path: string): string {
+  return `${API_BASE_URL}/${path.replace(/^\/+/, '')}`;
+}
+
+async function readError(response: Response): Promise<string> {
+  const text = await response.text();
+
+  if (!text) {
+    return response.statusText || 'Unknown server error';
+  }
+
+  try {
+    const parsed = JSON.parse(text);
+    return parsed.error || parsed.message || text;
+  } catch {
+    return text;
+  }
+}
+
+async function getAuthHeaders(): Promise<Record<string, string>> {
+  const token = await getFirebaseIdToken();
+
+  if (!token) {
+    throw new Error('You are not signed in. Please sign in and try again.');
+  }
+
+  return {
+    'Content-Type': 'application/json',
+    Authorization: `Bearer ${token}`,
+  };
+}
+
 export async function getRecommendations(userId: string) {
+  const headers = await getAuthHeaders();
   const response = await fetch(
-    `${API_BASE_URL}/api/v1/recommendations/${userId}`
+    apiUrl(`/api/v1/recommendations/${encodeURIComponent(userId)}`),
+    { headers },
   );
 
   if (!response.ok) {
-    const errorText = await response.text();
-
     throw new Error(
-      `Failed to fetch recommendations: ${response.status} ${errorText}`
+      `Failed to fetch recommendations: ${response.status} ${await readError(response)}`,
     );
   }
 
@@ -22,58 +65,58 @@ export async function getRecommendations(userId: string) {
 }
 
 export async function generateRecommendations(userId: string) {
+  const headers = await getAuthHeaders();
   const response = await fetch(
-    `${API_BASE_URL}/generate/${userId}`,
+    apiUrl(`/generate/${encodeURIComponent(userId)}`),
     {
       method: 'POST',
-      headers: {
-        'Content-Type': 'application/json',
-      },
-    }
+      headers,
+    },
   );
 
   if (!response.ok) {
-    const errorText = await response.text();
-
     throw new Error(
-      `Failed to generate recommendations: ${response.status} ${errorText}`
+      `Failed to generate recommendations: ${response.status} ${await readError(response)}`,
     );
   }
 
   return response.json();
 }
 
-export async function sendChatbotMessage(message: string) {
-  const token = await getFirebaseIdToken();
+export type ChatbotResponse = {
+  success: boolean;
+  reply: string;
+  model?: string;
+  mode?: 'ai' | 'demo';
+  error?: string;
+};
 
-  const response = await fetch(
-    `${API_BASE_URL}/api/chatbot/message`,
-    {
-      method: 'POST',
-      headers: {
-        'Content-Type': 'application/json',
-        Authorization: `Bearer ${token}`,
-      },
-      body: JSON.stringify({
-        message,
-      }),
-    }
-  );
+export async function sendChatbotMessage(
+  message: string,
+): Promise<ChatbotResponse> {
+  const trimmedMessage = message.trim();
+
+  if (!trimmedMessage) {
+    throw new Error('Please enter a message.');
+  }
+
+  const headers = await getAuthHeaders();
+  const response = await fetch(apiUrl('/api/chatbot/message'), {
+    method: 'POST',
+    headers,
+    body: JSON.stringify({ message: trimmedMessage }),
+  });
 
   if (!response.ok) {
-    const errorText = await response.text();
-
     throw new Error(
-      `Failed to send chatbot message: ${response.status} ${errorText}`
+      `Failed to send chatbot message: ${response.status} ${await readError(response)}`,
     );
   }
 
-  const data = await response.json();
+  const data = (await response.json()) as ChatbotResponse;
 
-  if (!data.success) {
-    throw new Error(
-      data.error || 'Chatbot request failed.'
-    );
+  if (!data?.success || typeof data.reply !== 'string' || !data.reply.trim()) {
+    throw new Error(data?.error || 'The chatbot returned an empty response.');
   }
 
   return data;
@@ -88,34 +131,36 @@ export type HealthDataPayload = {
   calories_burned: number;
 };
 
-export const submitHealthData = async (healthData: any) => {
-  let token = await getFirebaseIdToken();
+export async function submitHealthData(healthData: Record<string, unknown>) {
+  const headers = await getAuthHeaders();
 
-  // Fallback to dev mock token if no active Firebase token exists
-  if (!token) {
-    token = 'mock_valid_jwt_token';
+  const userId = healthData.userId ?? healthData.user_id;
+  const recordDate =
+    healthData.recordDate ??
+    healthData.record_date ??
+    new Date().toISOString().slice(0, 10);
+
+  if (userId === undefined || userId === null || String(userId).trim() === '') {
+    throw new Error('A user ID is required to submit health data.');
   }
 
-  // Ensure userId and recordDate exist in the payload
   const payload = {
-    userId: healthData.userId || healthData.user_id || '1',
-    recordDate: healthData.recordDate || healthData.record_date || new Date().toISOString().split('T')[0],
     ...healthData,
+    userId,
+    recordDate,
   };
 
-  const response = await fetch(`${API_BASE_URL}/api/health-data`, {
+  const response = await fetch(apiUrl('/api/health-data'), {
     method: 'POST',
-    headers: {
-      'Content-Type': 'application/json',
-      Authorization: `Bearer ${token}`,
-    },
+    headers,
     body: JSON.stringify(payload),
   });
 
   if (!response.ok) {
-    const errorText = await response.text();
-    throw new Error(`Failed to submit health metrics: ${response.status} ${errorText}`);
+    throw new Error(
+      `Failed to submit health metrics: ${response.status} ${await readError(response)}`,
+    );
   }
 
-  return await response.json();
-};
+  return response.json();
+}

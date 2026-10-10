@@ -81,6 +81,9 @@ export default function HealthDataScreen() {
     currentHealth.userId?.toString() || '1'
   );
 
+  // Display name identifies the person; User ID remains the record key.
+  const [userName, setUserName] = useState('');
+
   const [steps, setSteps] = useState(
     currentHealth.steps > 0
       ? currentHealth.steps.toString()
@@ -180,8 +183,12 @@ export default function HealthDataScreen() {
       caloriesBurned
     );
 
+    if (!userName.trim()) {
+      return 'Please enter the name of the person whose record you are updating.';
+    }
+
     if (
-      !userId ||
+      !userId.trim() ||
       !Number.isInteger(userIdValue) ||
       userIdValue <= 0
     ) {
@@ -266,8 +273,9 @@ export default function HealthDataScreen() {
       ? Number(caloriesBurned)
       : 0;
 
-    const payload: HealthDataPayload = {
+    const payload: HealthDataPayload & { user_name: string } = {
       user_id: userIdValue,
+      user_name: userName.trim(),
       step_count: stepsValue,
       sleep_hours: sleepValue,
       heart_rate_avg: heartRateValue,
@@ -540,8 +548,21 @@ export default function HealthDataScreen() {
 
                 <View style={styles.card}>
                   <InputField
+                    label="User Name"
+                    hint="Name of the person whose health record is being updated"
+                    value={userName}
+                    onChangeText={(value) => {
+                      clearMessages();
+                      setUserName(value);
+                    }}
+                    keyboardType="default"
+                    icon="NAME"
+                    accent={colors.primary}
+                  />
+
+                  <InputField
                     label="User ID"
-                    hint="Project health record identifier"
+                    hint="Numeric project health record identifier"
                     value={userId}
                     onChangeText={(value) => {
                       clearMessages();
@@ -550,6 +571,7 @@ export default function HealthDataScreen() {
                     keyboardType="number-pad"
                     icon="ID"
                     accent={colors.primary}
+                    last
                   />
                 </View>
 

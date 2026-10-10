@@ -1,3 +1,4 @@
+
 import React from 'react';
 import {
   Pressable,
@@ -14,9 +15,7 @@ type Props = {
 };
 
 function formatTime(timestamp: string | null) {
-  if (!timestamp) {
-    return 'Waiting for data';
-  }
+  if (!timestamp) return 'Waiting for data';
 
   const date = new Date(timestamp);
 
@@ -37,61 +36,102 @@ export default function LiveDeviceBanner({
   lastUpdated,
   onPress,
 }: Props) {
+  const displayName = connected
+    ? deviceName || 'Demo Wearable'
+    : 'Health Device';
+
+  const updateText = connected
+    ? `Last update: ${formatTime(lastUpdated)}`
+    : 'No live device currently active';
+
   return (
     <Pressable
-      style={[
+      accessibilityRole="button"
+      accessibilityLabel={
+        connected
+          ? `${displayName} is active with simulated readings. Open live health data.`
+          : 'Health device is not active. Open live health data.'
+      }
+      accessibilityHint="Opens the live health screen"
+      style={({ pressed }) => [
         styles.container,
         connected && styles.containerActive,
+        pressed && styles.containerPressed,
       ]}
       onPress={onPress}
     >
       <View style={styles.left}>
         <View
           style={[
-            styles.watch,
-            connected && styles.watchActive,
+            styles.deviceIcon,
+            connected && styles.deviceIconActive,
           ]}
         >
-          <Text style={styles.watchText}>
-            ⌚
-          </Text>
+          <Text style={styles.deviceIconText}>⌚</Text>
         </View>
 
         <View style={styles.info}>
           <View style={styles.titleRow}>
-            <Text style={styles.title}>
-              {connected
-                ? deviceName || 'Demo Wearable'
-                : 'Health Device'}
+            <Text style={styles.title} numberOfLines={1}>
+              {displayName}
             </Text>
 
-            {connected ? (
-              <View style={styles.liveBadge}>
+            {connected && (
+              <View
+                style={styles.liveBadge}
+                accessibilityLabel="Simulated live data"
+              >
                 <View style={styles.liveDot} />
-                <Text style={styles.liveText}>
-                  LIVE
-                </Text>
+                <Text style={styles.liveText}>DEMO LIVE</Text>
               </View>
-            ) : null}
+            )}
           </View>
 
-          <Text style={styles.subtitle}>
+          <Text style={styles.subtitle} numberOfLines={2}>
             {connected
               ? 'Streaming simulated real-time health data'
-              : 'No live device currently active'}
+              : 'Start the demo monitor to see simulated readings'}
           </Text>
 
-          {connected ? (
-            <Text style={styles.updated}>
-              Last update: {formatTime(lastUpdated)}
+          <View style={styles.metaRow}>
+            <View
+              style={[
+                styles.statusDot,
+                connected
+                  ? styles.statusDotActive
+                  : styles.statusDotInactive,
+              ]}
+            />
+
+            <Text
+              style={[
+                styles.updated,
+                connected
+                  ? styles.updatedActive
+                  : styles.updatedInactive,
+              ]}
+            >
+              {updateText}
             </Text>
-          ) : null}
+          </View>
         </View>
       </View>
 
-      <Text style={styles.arrow}>
-        ›
-      </Text>
+      <View
+        style={[
+          styles.arrowContainer,
+          connected && styles.arrowContainerActive,
+        ]}
+      >
+        <Text
+          style={[
+            styles.arrow,
+            connected && styles.arrowActive,
+          ]}
+        >
+          ›
+        </Text>
+      </View>
     </Pressable>
   );
 }
@@ -101,82 +141,135 @@ const styles = StyleSheet.create({
     width: '100%',
     maxWidth: 1180,
     alignSelf: 'center',
-    minHeight: 76,
-    borderRadius: 20,
-    backgroundColor: '#FFFFFF',
+    minHeight: 112,
+    borderRadius: 22,
+    backgroundColor: '#182238',
     borderWidth: 1,
-    borderColor: '#DCEEEA',
-    padding: 14,
+    borderColor: '#2A3650',
+    paddingHorizontal: 16,
+    paddingVertical: 15,
     flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'space-between',
     marginBottom: 16,
+    shadowColor: '#000000',
+    shadowOffset: { width: 0, height: 4 },
+    shadowOpacity: 0.16,
+    shadowRadius: 12,
+    elevation: 3,
   },
 
   containerActive: {
-    backgroundColor: '#ECF9F5',
-    borderColor: '#A9DCCE',
+    backgroundColor: '#1A2C3D',
+    borderColor: '#28645D',
+  },
+
+  containerPressed: {
+    opacity: 0.84,
+    transform: [{ scale: 0.995 }],
   },
 
   left: {
+    flex: 1,
     flexDirection: 'row',
     alignItems: 'center',
-    flex: 1,
+    minWidth: 0,
   },
 
-  watch: {
-    width: 48,
-    height: 48,
-    borderRadius: 15,
-    backgroundColor: '#F1F4F5',
+  deviceIcon: {
+    width: 52,
+    height: 52,
+    borderRadius: 17,
+    backgroundColor: '#26344D',
     alignItems: 'center',
     justifyContent: 'center',
-    marginRight: 12,
+    marginRight: 13,
+    borderWidth: 1,
+    borderColor: '#354560',
   },
 
-  watchActive: {
-    backgroundColor: '#D7F2EA',
+  deviceIconActive: {
+    backgroundColor: '#204640',
+    borderColor: '#34766A',
   },
 
-  watchText: {
-    fontSize: 22,
+  deviceIconText: {
+    fontSize: 25,
+    color: '#F3F6FF',
   },
 
   info: {
     flex: 1,
+    minWidth: 0,
   },
 
   titleRow: {
     flexDirection: 'row',
     alignItems: 'center',
     flexWrap: 'wrap',
+    rowGap: 6,
   },
 
   title: {
-    fontSize: 13,
-    fontWeight: '900',
-    color: '#12374E',
+    flexShrink: 1,
+    fontSize: 15,
+    lineHeight: 21,
+    fontWeight: '800',
+    color: '#F4F6FF',
   },
 
   subtitle: {
-    fontSize: 10,
-    color: '#718493',
-    marginTop: 3,
+    fontSize: 12,
+    lineHeight: 18,
+    color: '#A3B2C8',
+    marginTop: 4,
+  },
+
+  metaRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    marginTop: 7,
+  },
+
+  statusDot: {
+    width: 7,
+    height: 7,
+    borderRadius: 4,
+    marginRight: 6,
+  },
+
+  statusDotActive: {
+    backgroundColor: '#49D6A0',
+  },
+
+  statusDotInactive: {
+    backgroundColor: '#8493A8',
   },
 
   updated: {
-    fontSize: 9,
-    color: '#7C918C',
-    marginTop: 4,
+    flexShrink: 1,
+    fontSize: 11,
+    lineHeight: 16,
+    fontWeight: '600',
+  },
+
+  updatedActive: {
+    color: '#9EDCC5',
+  },
+
+  updatedInactive: {
+    color: '#A0ADC1',
   },
 
   liveBadge: {
     flexDirection: 'row',
     alignItems: 'center',
-    backgroundColor: '#D6F1E9',
+    backgroundColor: '#153D36',
+    borderWidth: 1,
+    borderColor: '#28675A',
     borderRadius: 12,
-    paddingHorizontal: 7,
-    paddingVertical: 4,
+    paddingHorizontal: 8,
+    paddingVertical: 5,
     marginLeft: 8,
   },
 
@@ -184,20 +277,40 @@ const styles = StyleSheet.create({
     width: 6,
     height: 6,
     borderRadius: 3,
-    backgroundColor: '#19A36D',
-    marginRight: 4,
+    backgroundColor: '#49D6A0',
+    marginRight: 5,
   },
 
   liveText: {
-    fontSize: 8,
-    fontWeight: '900',
-    color: '#18745F',
-    letterSpacing: 0.7,
+    fontSize: 9,
+    lineHeight: 12,
+    fontWeight: '800',
+    color: '#83E7C0',
+    letterSpacing: 0.35,
+  },
+
+  arrowContainer: {
+    width: 34,
+    height: 42,
+    borderRadius: 12,
+    backgroundColor: '#26334A',
+    alignItems: 'center',
+    justifyContent: 'center',
+    marginLeft: 8,
+  },
+
+  arrowContainerActive: {
+    backgroundColor: '#254640',
   },
 
   arrow: {
     fontSize: 28,
-    color: '#559184',
-    marginLeft: 10,
+    lineHeight: 32,
+    fontWeight: '400',
+    color: '#A6B4C9',
+  },
+
+  arrowActive: {
+    color: '#7FE0B9',
   },
 });

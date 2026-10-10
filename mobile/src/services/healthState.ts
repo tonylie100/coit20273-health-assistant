@@ -168,12 +168,9 @@ export function calculateBMI(
 export function calculateWellnessScore(
   health: Pick<
     HealthState,
-    | 'heartRate'
-    | 'steps'
-    | 'sleepHours'
-    | 'waterIntake'
+    'heartRate' | 'steps' | 'sleepHours' | 'waterIntake'
   >
-): number {
+): number | null {
   let score = 0;
   let availableFactors = 0;
 
@@ -237,8 +234,8 @@ export function calculateWellnessScore(
   }
 
   if (availableFactors === 0) {
-    return 0;
-  }
+  return null;
+}
 
   return Math.round(
     (score / availableFactors) * 4

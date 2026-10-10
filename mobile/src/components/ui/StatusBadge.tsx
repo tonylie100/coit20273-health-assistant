@@ -37,72 +37,39 @@ export default function StatusBadge({
       style={[
         styles.badge,
 
-        variant === 'live' &&
-          styles.live,
-
-        variant === 'success' &&
-          styles.success,
-
-        variant === 'warning' &&
-          styles.warning,
-
-        variant === 'danger' &&
-          styles.danger,
-
-        variant === 'info' &&
-          styles.info,
-
-        variant === 'neutral' &&
-          styles.neutral,
+        variant === 'live' && styles.live,
+        variant === 'success' && styles.success,
+        variant === 'warning' && styles.warning,
+        variant === 'danger' && styles.danger,
+        variant === 'info' && styles.info,
+        variant === 'neutral' && styles.neutral,
       ]}
     >
-      {dot && (
+      {dot ? (
         <View
           style={[
             styles.dot,
 
-            variant === 'live' &&
-              styles.liveDot,
-
-            variant === 'success' &&
-              styles.successDot,
-
-            variant === 'warning' &&
-              styles.warningDot,
-
-            variant === 'danger' &&
-              styles.dangerDot,
-
-            variant === 'info' &&
-              styles.infoDot,
-
-            variant === 'neutral' &&
-              styles.neutralDot,
+            variant === 'live' && styles.liveDot,
+            variant === 'success' && styles.successDot,
+            variant === 'warning' && styles.warningDot,
+            variant === 'danger' && styles.dangerDot,
+            variant === 'info' && styles.infoDot,
+            variant === 'neutral' && styles.neutralDot,
           ]}
         />
-      )}
+      ) : null}
 
       <Text
         style={[
           styles.text,
 
-          variant === 'live' &&
-            styles.liveText,
-
-          variant === 'success' &&
-            styles.successText,
-
-          variant === 'warning' &&
-            styles.warningText,
-
-          variant === 'danger' &&
-            styles.dangerText,
-
-          variant === 'info' &&
-            styles.infoText,
-
-          variant === 'neutral' &&
-            styles.neutralText,
+          variant === 'live' && styles.liveText,
+          variant === 'success' && styles.successText,
+          variant === 'warning' && styles.warningText,
+          variant === 'danger' && styles.dangerText,
+          variant === 'info' && styles.infoText,
+          variant === 'neutral' && styles.neutralText,
         ]}
       >
         {label}
@@ -113,47 +80,57 @@ export default function StatusBadge({
 
 const styles = StyleSheet.create({
   badge: {
-    minHeight: 26,
+    minHeight: 28,
     paddingHorizontal: spacing.md,
+    paddingVertical: spacing.xs,
     borderRadius: radii.pill,
+    borderWidth: 1,
     flexDirection: 'row',
     alignItems: 'center',
     alignSelf: 'flex-start',
   },
 
   dot: {
-    width: 6,
-    height: 6,
-    borderRadius: 3,
-    marginRight: 6,
+    width: 7,
+    height: 7,
+    borderRadius: 4,
+    marginRight: 7,
   },
 
   text: {
     ...typography.caption,
+    fontWeight: '800',
+    letterSpacing: 0.15,
   },
 
   live: {
     backgroundColor: colors.successLight,
+    borderColor: '#C7E8D7',
   },
 
   success: {
     backgroundColor: colors.successLight,
+    borderColor: '#C7E8D7',
   },
 
   warning: {
     backgroundColor: colors.warningLight,
+    borderColor: '#F0DEB3',
   },
 
   danger: {
     backgroundColor: colors.dangerLight,
+    borderColor: '#F0D0D0',
   },
 
   info: {
     backgroundColor: colors.infoLight,
+    borderColor: '#CFE5EF',
   },
 
   neutral: {
     backgroundColor: colors.surfaceMuted,
+    borderColor: '#E1E7EC',
   },
 
   liveDot: {
@@ -189,15 +166,15 @@ const styles = StyleSheet.create({
   },
 
   warningText: {
-    color: '#94630E',
+    color: '#85580B',
   },
 
   dangerText: {
-    color: '#9E4141',
+    color: '#963838',
   },
 
   infoText: {
-    color: '#326F88',
+    color: '#285E76',
   },
 
   neutralText: {

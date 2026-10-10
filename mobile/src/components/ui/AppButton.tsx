@@ -42,12 +42,17 @@ export default function AppButton({
   fullWidth = false,
   style,
 }: AppButtonProps) {
-  const isDisabled =
-    disabled || loading;
+  const isDisabled = disabled || loading;
+
+  const indicatorColor =
+    variant === 'outline' || variant === 'ghost'
+      ? colors.primary
+      : colors.textInverse;
 
   return (
     <Pressable
       accessibilityRole="button"
+      accessibilityLabel={title}
       accessibilityState={{
         disabled: isDisabled,
         busy: loading,
@@ -57,30 +62,15 @@ export default function AppButton({
       style={({ pressed }) => [
         styles.base,
 
-        variant === 'primary' &&
-          styles.primary,
+        variant === 'primary' && styles.primary,
+        variant === 'secondary' && styles.secondary,
+        variant === 'outline' && styles.outline,
+        variant === 'ghost' && styles.ghost,
+        variant === 'danger' && styles.danger,
 
-        variant === 'secondary' &&
-          styles.secondary,
-
-        variant === 'outline' &&
-          styles.outline,
-
-        variant === 'ghost' &&
-          styles.ghost,
-
-        variant === 'danger' &&
-          styles.danger,
-
-        fullWidth &&
-          styles.fullWidth,
-
-        isDisabled &&
-          styles.disabled,
-
-        pressed &&
-          !isDisabled &&
-          styles.pressed,
+        fullWidth && styles.fullWidth,
+        isDisabled && styles.disabled,
+        pressed && !isDisabled && styles.pressed,
 
         style,
       ]}
@@ -88,36 +78,25 @@ export default function AppButton({
       {loading ? (
         <ActivityIndicator
           size="small"
-          color={
-            variant === 'outline' ||
-            variant === 'ghost'
-              ? colors.primary
-              : colors.textInverse
-          }
+          color={indicatorColor}
+          accessibilityLabel="Loading"
         />
       ) : (
         <Text
           style={[
             styles.text,
 
-            variant === 'primary' &&
-              styles.primaryText,
+            variant === 'primary' && styles.primaryText,
+            variant === 'secondary' && styles.secondaryText,
+            variant === 'outline' && styles.outlineText,
+            variant === 'ghost' && styles.ghostText,
+            variant === 'danger' && styles.dangerText,
 
-            variant === 'secondary' &&
-              styles.secondaryText,
-
-            variant === 'outline' &&
-              styles.outlineText,
-
-            variant === 'ghost' &&
-              styles.ghostText,
-
-            variant === 'danger' &&
-              styles.dangerText,
-
-            isDisabled &&
-              styles.disabledText,
+            isDisabled && styles.disabledText,
           ]}
+          numberOfLines={2}
+          adjustsFontSizeToFit
+          minimumFontScale={0.85}
         >
           {title}
         </Text>
@@ -128,9 +107,12 @@ export default function AppButton({
 
 const styles = StyleSheet.create({
   base: {
-    minHeight: 46,
+    minHeight: 48,
     paddingHorizontal: spacing.xl,
+    paddingVertical: spacing.sm,
     borderRadius: radii.md,
+    borderWidth: 1,
+    borderColor: 'transparent',
     justifyContent: 'center',
     alignItems: 'center',
     flexDirection: 'row',
@@ -138,24 +120,27 @@ const styles = StyleSheet.create({
 
   primary: {
     backgroundColor: colors.primary,
+    borderColor: colors.primary,
   },
 
   secondary: {
     backgroundColor: colors.primaryLight,
+    borderColor: colors.primaryLight,
   },
 
   outline: {
     backgroundColor: colors.surface,
-    borderWidth: 1,
     borderColor: colors.primary,
   },
 
   ghost: {
     backgroundColor: 'transparent',
+    borderColor: 'transparent',
   },
 
   danger: {
     backgroundColor: colors.danger,
+    borderColor: colors.danger,
   },
 
   fullWidth: {
@@ -164,6 +149,8 @@ const styles = StyleSheet.create({
 
   text: {
     ...typography.button,
+    textAlign: 'center',
+    fontWeight: '800',
   },
 
   primaryText: {
@@ -187,15 +174,15 @@ const styles = StyleSheet.create({
   },
 
   disabled: {
-    opacity: 0.45,
+    opacity: 0.5,
   },
 
   disabledText: {
-    color: colors.textInverse,
+    opacity: 0.85,
   },
 
   pressed: {
-    opacity: 0.82,
+    opacity: 0.85,
     transform: [
       {
         scale: 0.985,

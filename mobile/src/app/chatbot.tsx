@@ -1,4 +1,9 @@
-import React, { useEffect, useMemo, useRef, useState } from 'react';
+import React, {
+  useEffect,
+  useMemo,
+  useRef,
+  useState,
+} from 'react';
 import {
   ActivityIndicator,
   KeyboardAvoidingView,
@@ -10,6 +15,7 @@ import {
   Text,
   TextInput,
   View,
+  useWindowDimensions,
 } from 'react-native';
 import { router } from 'expo-router';
 
@@ -47,35 +53,190 @@ type Message = {
 const INITIAL_MESSAGE: Message = {
   id: 'initial-message',
   text:
-    "Hi! I'm your AI Health Assistant. I'm connected to your latest wellness context and can help you understand your activity, sleep, hydration, recovery and general wellbeing.",
+    "Hi! I'm your AI Health Assistant. I can use the wellness information currently available in the app to help you understand your activity, sleep, hydration, recovery and general wellbeing.",
   sender: 'bot',
   timestamp: new Date(),
 };
 
 const SUGGESTED_PROMPTS = [
   {
-    icon: '❤️',
+    icon: '♥',
     title: 'Heart rate',
     text: 'What does my current heart rate tell me?',
   },
   {
-    icon: '😴',
+    icon: '☾',
     title: 'Recovery',
     text: 'How is my recovery looking today?',
   },
   {
-    icon: '💧',
+    icon: '◊',
     title: 'Hydration',
     text: 'How is my hydration today?',
   },
   {
-    icon: '🧠',
-    title: 'Stress',
-    text: 'What can I do to manage my stress right now?',
+    icon: '✦',
+    title: 'Next step',
+    text: 'Based on my current health, what should I focus on next?',
   },
 ];
 
+function formatTime(value: Date | string | null) {
+  if (!value) {
+    return 'Waiting for data';
+  }
+
+  const date =
+    value instanceof Date
+      ? value
+      : new Date(value);
+
+  if (Number.isNaN(date.getTime())) {
+    return 'Waiting for data';
+  }
+
+  return date.toLocaleTimeString([], {
+    hour: '2-digit',
+    minute: '2-digit',
+  });
+}
+
+function generateFallback(
+  question: string,
+  health: HealthState,
+): string {
+  const lower = question.toLowerCase();
+
+  if (
+    lower.includes('heart') ||
+    lower.includes('pulse') ||
+    lower.includes('bpm')
+  ) {
+    if (health.heartRate !== null) {
+      return (
+        `Your latest ${
+          health.isDemoDevice
+            ? 'simulated '
+            : ''
+        }heart-rate reading is ${health.heartRate} bpm. ` +
+        'A single reading is only one part of your overall health picture. ' +
+        'If you have concerning symptoms such as chest pain, severe breathlessness ' +
+        'or fainting, seek appropriate medical attention.'
+      );
+    }
+
+    return (
+      'I do not currently have a heart-rate reading. ' +
+      'Start Live Health or add health information so I can use it in the conversation.'
+    );
+  }
+
+  if (
+    lower.includes('sleep') ||
+    lower.includes('recovery') ||
+    lower.includes('tired')
+  ) {
+    if (health.sleepHours !== null) {
+      return (
+        `You currently have ${health.sleepHours.toFixed(
+          1,
+        )} hours of recorded sleep. ` +
+        'A consistent sleep routine and enough recovery time can support general wellbeing.'
+      );
+    }
+
+    return (
+      'Sleep information is not available yet. ' +
+      'Add your sleep data so I can include it in your wellness context.'
+    );
+  }
+
+  if (
+    lower.includes('water') ||
+    lower.includes('hydration')
+  ) {
+    if (health.waterIntake > 0) {
+      return (
+        `You have recorded ${health.waterIntake.toFixed(
+          1,
+        )} litres of water so far. ` +
+        'Spreading fluid intake throughout the day can be a practical hydration habit.'
+      );
+    }
+
+    return (
+      'I do not have hydration information yet. ' +
+      'Add your water intake so I can make the conversation more relevant.'
+    );
+  }
+
+  if (
+    lower.includes('step') ||
+    lower.includes('walk') ||
+    lower.includes('exercise') ||
+    lower.includes('activity')
+  ) {
+    return (
+      `You have recorded ${health.steps.toLocaleString()} steps today. ` +
+      'If you want to increase activity, a short comfortable walk can be a practical option.'
+    );
+  }
+
+  return (
+    'I could not reach the AI service just now, so I could not generate a personalised response. ' +
+    'Your latest wellness values remain available in the app. Please check your connection and try again.'
+  );
+}
+
+function getHealthSummary(
+  health: HealthState,
+) {
+  const parts: string[] = [];
+
+  if (health.heartRate !== null) {
+    parts.push(
+      `${health.heartRate} bpm heart rate`,
+    );
+  }
+
+  if (health.steps > 0) {
+    parts.push(
+      `${health.steps.toLocaleString()} steps`,
+    );
+  }
+
+  if (health.sleepHours !== null) {
+    parts.push(
+      `${health.sleepHours.toFixed(1)} hours sleep`,
+    );
+  }
+
+  if (health.waterIntake > 0) {
+    parts.push(
+      `${health.waterIntake.toFixed(1)} L hydration`,
+    );
+  }
+
+  if (health.energyLevel !== null) {
+    parts.push(
+      `energy ${health.energyLevel}/10`,
+    );
+  }
+
+  if (health.stressLevel) {
+    parts.push(
+      `${health.stressLevel} stress`,
+    );
+  }
+
+  return parts;
+}
+
 export default function ChatbotScreen() {
+  const { width } = useWindowDimensions();
+
+  const isWide = width >= 900;
+
   const [message, setMessage] = useState('');
   const [isTyping, setIsTyping] = useState(false);
   const [lastFailedMessage, setLastFailedMessage] =
@@ -90,7 +251,9 @@ export default function ChatbotScreen() {
   );
 
   const [aiContext, setAIContext] =
-    useState<AIHealthContext>(() => createAIHealthContext());
+    useState<AIHealthContext>(() =>
+      createAIHealthContext(),
+    );
 
   const [freshness, setFreshness] = useState(
     getHealthContextFreshness(),
@@ -99,18 +262,26 @@ export default function ChatbotScreen() {
   const scrollRef = useRef<ScrollView>(null);
 
   useEffect(() => {
-    const unsubscribe = subscribeToHealthState((state) => {
-      setHealth({ ...state });
-      setAIContext(createAIHealthContext(state));
-      setFreshness(getHealthContextFreshness(state));
-    });
+    const unsubscribe = subscribeToHealthState(
+      (state) => {
+        setHealth({ ...state });
+        setAIContext(
+          createAIHealthContext(state),
+        );
+        setFreshness(
+          getHealthContextFreshness(state),
+        );
+      },
+    );
 
     return unsubscribe;
   }, []);
 
   useEffect(() => {
     const timer = setInterval(() => {
-      setFreshness(getHealthContextFreshness(health));
+      setFreshness(
+        getHealthContextFreshness(health),
+      );
     }, 1000);
 
     return () => clearInterval(timer);
@@ -131,10 +302,20 @@ export default function ChatbotScreen() {
     [health],
   );
 
-  const liveStatus = health.deviceConnected;
-  const isDemo = Boolean(health.isDemoDevice);
+  const liveStatus =
+    health.deviceConnected;
 
-  const sendMessage = async (messageOverride?: string) => {
+  const isDemo =
+    Boolean(health.isDemoDevice);
+
+  const healthSummary = useMemo(
+    () => getHealthSummary(health),
+    [health],
+  );
+
+  const sendMessage = async (
+    messageOverride?: string,
+  ) => {
     const trimmedMessage = (
       messageOverride ?? message
     ).trim();
@@ -160,20 +341,18 @@ export default function ChatbotScreen() {
     setLastFailedMessage(null);
 
     try {
-      /*
-       * Always capture health state at the exact moment
-       * the user asks the question.
-       */
       const currentHealth = getHealthState();
 
-      const contextualMessage = buildAIMessageContext(
-        trimmedMessage,
-        currentHealth,
-      );
+      const contextualMessage =
+        buildAIMessageContext(
+          trimmedMessage,
+          currentHealth,
+        );
 
-      const data = await sendChatbotMessage(
-        contextualMessage,
-      );
+      const data =
+        await sendChatbotMessage(
+          contextualMessage,
+        );
 
       const response =
         typeof data?.reply === 'string'
@@ -192,15 +371,22 @@ export default function ChatbotScreen() {
         botMessage,
       ]);
     } catch (error) {
-      console.log('Chatbot API error:', error);
+      console.log(
+        'Chatbot API error:',
+        error,
+      );
 
-      setLastFailedMessage(trimmedMessage);
+      setLastFailedMessage(
+        trimmedMessage,
+      );
+
+      const fallbackHealth = getHealthState();
 
       const fallbackMessage: Message = {
         id: `${Date.now()}-error`,
         text: generateFallback(
           trimmedMessage,
-          health,
+          fallbackHealth,
         ),
         sender: 'bot',
         timestamp: new Date(),
@@ -221,43 +407,10 @@ export default function ChatbotScreen() {
     }
 
     const current = getHealthState();
-    const parts: string[] = [];
 
-    if (current.heartRate !== null) {
-      parts.push(
-        `my current heart rate is ${current.heartRate} bpm`,
-      );
-    }
-
-    if (current.steps > 0) {
-      parts.push(
-        `${current.steps.toLocaleString()} steps`,
-      );
-    }
-
-    if (current.sleepHours !== null) {
-      parts.push(
-        `${current.sleepHours.toFixed(1)} hours of sleep`,
-      );
-    }
-
-    if (current.waterIntake > 0) {
-      parts.push(
-        `${current.waterIntake.toFixed(1)} litres of water`,
-      );
-    }
-
-    if (current.energyLevel !== null) {
-      parts.push(
-        `energy level ${current.energyLevel}/10`,
-      );
-    }
-
-    if (current.stressLevel) {
-      parts.push(
-        `${current.stressLevel} stress`,
-      );
-    }
+    const parts = getHealthSummary(
+      current,
+    );
 
     const context =
       parts.length > 0
@@ -296,17 +449,24 @@ export default function ChatbotScreen() {
 
         <View style={styles.header}>
           <Pressable
+            accessibilityRole="button"
+            accessibilityLabel="Go back"
             style={({ pressed }) => [
               styles.backButton,
-              pressed && styles.pressedSmall,
+              pressed &&
+                styles.pressedSmall,
             ]}
             onPress={() => router.back()}
           >
-            <Text style={styles.backIcon}>‹</Text>
+            <Text style={styles.backIcon}>
+              ‹
+            </Text>
           </Pressable>
 
           <View style={styles.aiAvatar}>
-            <Text style={styles.aiAvatarText}>✦</Text>
+            <Text style={styles.aiAvatarText}>
+              ✦
+            </Text>
           </View>
 
           <View style={styles.headerContent}>
@@ -326,22 +486,28 @@ export default function ChatbotScreen() {
               <Text style={styles.headerStatusText}>
                 {liveStatus
                   ? isDemo
-                    ? 'Demo live health context'
-                    : 'Live health context'
+                    ? 'Simulated health context active'
+                    : 'Live health context active'
                   : 'Personal wellness support'}
               </Text>
             </View>
           </View>
 
           <Pressable
+            accessibilityRole="button"
+            accessibilityLabel="Start a new conversation"
+            accessibilityHint="Clears the current conversation"
             style={({ pressed }) => [
               styles.clearButton,
-              pressed && styles.pressedSmall,
+              pressed &&
+                styles.pressedSmall,
             ]}
             onPress={clearChat}
             disabled={isTyping}
           >
-            <Text style={styles.clearIcon}>↻</Text>
+            <Text style={styles.clearIcon}>
+              ↻
+            </Text>
           </Pressable>
         </View>
 
@@ -350,510 +516,602 @@ export default function ChatbotScreen() {
         <ScrollView
           ref={scrollRef}
           style={styles.chat}
-          contentContainerStyle={styles.chatContent}
+          contentContainerStyle={[
+            styles.chatContent,
+            isWide &&
+              styles.chatContentWide,
+          ]}
           showsVerticalScrollIndicator={false}
           keyboardShouldPersistTaps="handled"
         >
-          {/* AI CONTEXT */}
+          <View
+            style={[
+              styles.contentColumn,
+              isWide &&
+                styles.contentColumnWide,
+            ]}
+          >
+            {/* CONTEXT CARD */}
 
-          <View style={styles.realtimeCard}>
-            <View style={styles.realtimeHeader}>
-              <View style={styles.realtimeTitleArea}>
-                <View style={styles.realtimeIcon}>
-                  <Text style={styles.realtimeIconText}>
+            <View style={styles.contextCard}>
+              <View style={styles.contextTop}>
+                <View style={styles.contextIdentity}>
+                  <View style={styles.contextIcon}>
+                    <Text style={styles.contextIconText}>
+                      ✦
+                    </Text>
+                  </View>
+
+                  <View style={styles.contextCopy}>
+                    <Text style={styles.contextTitle}>
+                      Your wellness context
+                    </Text>
+
+                    <Text style={styles.contextSubtitle}>
+                      {isDemo
+                        ? `Simulated live data • ${freshness}`
+                        : freshness}
+                    </Text>
+                  </View>
+                </View>
+
+                <View
+                  style={[
+                    styles.contextBadge,
+                    liveStatus
+                      ? styles.contextBadgeLive
+                      : styles.contextBadgeReady,
+                  ]}
+                >
+                  {liveStatus ? (
+                    <View style={styles.contextBadgeDot} />
+                  ) : null}
+
+                  <Text
+                    style={[
+                      styles.contextBadgeText,
+                      liveStatus
+                        ? styles.contextBadgeTextLive
+                        : styles.contextBadgeTextReady,
+                    ]}
+                  >
+                    {liveStatus
+                      ? isDemo
+                        ? 'DEMO'
+                        : 'LIVE'
+                      : hasContext
+                        ? 'READY'
+                        : 'WAITING'}
+                  </Text>
+                </View>
+              </View>
+
+              {hasContext ? (
+                <View style={styles.contextMetrics}>
+                  <ContextMetric
+                    icon="♥"
+                    label="Heart"
+                    value={
+                      health.heartRate !== null
+                        ? String(
+                            health.heartRate,
+                          )
+                        : '--'
+                    }
+                    unit="bpm"
+                  />
+
+                  <ContextMetric
+                    icon="⌁"
+                    label="Steps"
+                    value={
+                      health.steps > 0
+                        ? health.steps.toLocaleString()
+                        : '--'
+                    }
+                    unit="today"
+                  />
+
+                  <ContextMetric
+                    icon="☾"
+                    label="Sleep"
+                    value={
+                      health.sleepHours !== null
+                        ? health.sleepHours.toFixed(
+                            1,
+                          )
+                        : '--'
+                    }
+                    unit="hrs"
+                  />
+
+                  <ContextMetric
+                    icon="◊"
+                    label="Water"
+                    value={
+                      health.waterIntake > 0
+                        ? health.waterIntake.toFixed(
+                            1,
+                          )
+                        : '--'
+                    }
+                    unit="L"
+                  />
+                </View>
+              ) : (
+                <View style={styles.waitingState}>
+                  <View style={styles.waitingIcon}>
+                    <Text style={styles.waitingIconText}>
+                      +
+                    </Text>
+                  </View>
+
+                  <View style={styles.waitingCopy}>
+                    <Text style={styles.waitingTitle}>
+                      Your health context is waiting
+                    </Text>
+
+                    <Text style={styles.waitingText}>
+                      Add health information or start
+                      the demo monitor to give the AI
+                      more useful context.
+                    </Text>
+                  </View>
+                </View>
+              )}
+
+              {liveStatus ? (
+                <View style={styles.deviceRow}>
+                  <View style={styles.deviceIndicator}>
+                    <View
+                      style={
+                        styles.deviceIndicatorInner
+                      }
+                    />
+                  </View>
+
+                  <View style={styles.deviceCopy}>
+                    <Text style={styles.deviceName}>
+                      {health.deviceName ??
+                        'Health device'}
+                    </Text>
+
+                    <Text style={styles.deviceDescription}>
+                      {isDemo
+                        ? 'Simulated wearable • updating automatically'
+                        : 'Connected wearable • updating automatically'}
+                    </Text>
+                  </View>
+                </View>
+              ) : null}
+
+              {isDemo ? (
+                <View style={styles.demoNotice}>
+                  <Text style={styles.demoNoticeIcon}>
+                    i
+                  </Text>
+
+                  <Text style={styles.demoNoticeText}>
+                    Demo values are simulated for this
+                    prototype and are not clinical
+                    measurements.
+                  </Text>
+                </View>
+              ) : null}
+            </View>
+
+            {/* ASK AI */}
+
+            {hasContext ? (
+              <Pressable
+                accessibilityRole="button"
+                accessibilityLabel="Ask AI about my current health"
+                style={({ pressed }) => [
+                  styles.askCard,
+                  pressed &&
+                    styles.askCardPressed,
+                ]}
+                onPress={askAboutCurrentHealth}
+                disabled={isTyping}
+              >
+                <View style={styles.askIcon}>
+                  <Text style={styles.askIconText}>
                     ✦
                   </Text>
                 </View>
 
-                <View style={styles.realtimeTitleContent}>
-                  <Text style={styles.realtimeTitle}>
-                    AI live context
+                <View style={styles.askCopy}>
+                  <Text style={styles.askTitle}>
+                    Ask AI about my health
                   </Text>
 
-                  <Text style={styles.realtimeSubtitle}>
-                    {isDemo
-                      ? `Simulated live data • ${freshness}`
-                      : freshness}
+                  <Text style={styles.askSubtitle}>
+                    Get a practical summary of your
+                    latest available wellness context.
                   </Text>
                 </View>
-              </View>
 
-              <View
-                style={[
-                  styles.liveBadge,
-                  !liveStatus &&
-                    styles.liveBadgeOffline,
-                ]}
-              >
-                <View
-                  style={[
-                    styles.liveBadgeDot,
-                    !liveStatus &&
-                      styles.liveBadgeDotOffline,
-                  ]}
-                />
+                <View style={styles.askArrowCircle}>
+                  <Text style={styles.askArrow}>
+                    →
+                  </Text>
+                </View>
+              </Pressable>
+            ) : null}
 
-                <Text
-                  style={[
-                    styles.liveBadgeText,
-                    !liveStatus &&
-                      styles.liveBadgeTextOffline,
-                  ]}
-                >
-                  {liveStatus
-                    ? isDemo
-                      ? 'DEMO'
-                      : 'LIVE'
-                    : hasContext
-                      ? 'READY'
-                      : 'WAITING'}
+            {/* LIVE INSIGHT */}
+
+            {aiContext.insights.length > 0 ? (
+              <View style={styles.insightCard}>
+                <View style={styles.insightHeader}>
+                  <View style={styles.insightIcon}>
+                    <Text style={styles.insightIconText}>
+                      ✨
+                    </Text>
+                  </View>
+
+                  <View style={styles.insightCopy}>
+                    <Text style={styles.insightTitle}>
+                      Live wellness insight
+                    </Text>
+
+                    <Text style={styles.insightSubtitle}>
+                      Based on your latest health state
+                    </Text>
+                  </View>
+
+                  <View style={styles.aiPill}>
+                    <Text style={styles.aiPillText}>
+                      AI
+                    </Text>
+                  </View>
+                </View>
+
+                <Text style={styles.insightText}>
+                  {aiContext.insights[0]}
                 </Text>
-              </View>
-            </View>
-
-            {hasContext ? (
-              <View style={styles.liveMetrics}>
-                <LiveMetric
-                  icon="♥"
-                  label="Heart"
-                  value={
-                    health.heartRate !== null
-                      ? `${health.heartRate}`
-                      : '--'
-                  }
-                  unit="bpm"
-                  accent={colors.heart}
-                />
-
-                <LiveMetric
-                  icon="⌁"
-                  label="Steps"
-                  value={
-                    health.steps > 0
-                      ? health.steps.toLocaleString()
-                      : '--'
-                  }
-                  unit="today"
-                  accent={colors.steps}
-                />
-
-                <LiveMetric
-                  icon="◒"
-                  label="Sleep"
-                  value={
-                    health.sleepHours !== null
-                      ? health.sleepHours.toFixed(1)
-                      : '--'
-                  }
-                  unit="hrs"
-                  accent={colors.sleep}
-                />
-
-                <LiveMetric
-                  icon="◆"
-                  label="Water"
-                  value={
-                    health.waterIntake > 0
-                      ? health.waterIntake.toFixed(1)
-                      : '--'
-                  }
-                  unit="L"
-                  accent={colors.water}
-                />
-              </View>
-            ) : (
-              <View style={styles.waitingState}>
-                <Text style={styles.waitingIcon}>
-                  ◌
-                </Text>
-
-                <View style={styles.waitingContent}>
-                  <Text style={styles.waitingTitle}>
-                    Waiting for health data
-                  </Text>
-
-                  <Text style={styles.waitingText}>
-                    Start Live Health or add manual data
-                    to give the AI more context.
-                  </Text>
-                </View>
-              </View>
-            )}
-
-            {liveStatus ? (
-              <View style={styles.deviceRow}>
-                <View style={styles.devicePulse}>
-                  <View style={styles.devicePulseInner} />
-                </View>
-
-                <View style={styles.deviceContent}>
-                  <Text style={styles.deviceName}>
-                    {health.deviceName ??
-                      'Health device'}
-                  </Text>
-
-                  <Text style={styles.deviceDescription}>
-                    {isDemo
-                      ? 'Simulated wearable • updating automatically'
-                      : 'Connected wearable • updating automatically'}
-                  </Text>
-                </View>
               </View>
             ) : null}
 
-            {isDemo ? (
-              <View style={styles.demoNotice}>
-                <Text style={styles.demoNoticeIcon}>
-                  ⓘ
-                </Text>
+            {/* EMPTY CHAT */}
 
-                <Text style={styles.demoNoticeText}>
-                  These live values are simulated demo
-                  data for the prototype and are not
-                  clinical measurements.
-                </Text>
-              </View>
-            ) : null}
-          </View>
-
-          {/* ASK CURRENT HEALTH */}
-
-          {hasContext ? (
-            <Pressable
-              style={({ pressed }) => [
-                styles.askCurrentCard,
-                pressed &&
-                  styles.askCurrentCardPressed,
-              ]}
-              onPress={askAboutCurrentHealth}
-              disabled={isTyping}
-            >
-              <View style={styles.askCurrentIcon}>
-                <Text style={styles.askCurrentIconText}>
-                  ✦
-                </Text>
-              </View>
-
-              <View style={styles.askCurrentContent}>
-                <Text style={styles.askCurrentTitle}>
-                  Ask AI about my current health
-                </Text>
-
-                <Text style={styles.askCurrentSubtitle}>
-                  Analyse the latest available readings
-                  and give me a practical wellness summary.
-                </Text>
-              </View>
-
-              <Text style={styles.askCurrentArrow}>
-                →
-              </Text>
-            </Pressable>
-          ) : null}
-
-          {/* AI INSIGHT */}
-
-          {aiContext.insights.length > 0 ? (
-            <View style={styles.insightCard}>
-              <View style={styles.insightHeader}>
-                <View style={styles.insightIcon}>
-                  <Text style={styles.insightIconText}>
-                    ✨
+            {messages.length === 1 ? (
+              <View style={styles.intro}>
+                <View style={styles.introBadge}>
+                  <Text style={styles.introBadgeText}>
+                    PERSONAL WELLNESS ASSISTANT
                   </Text>
                 </View>
 
-                <View style={styles.insightTitleArea}>
-                  <Text style={styles.insightTitle}>
-                    Live wellness insight
-                  </Text>
+                <Text style={styles.introTitle}>
+                  What would you like to understand?
+                </Text>
 
-                  <Text style={styles.insightSubtitle}>
-                    Based on your latest health state
-                  </Text>
-                </View>
-              </View>
+                <Text style={styles.introDescription}>
+                  Ask a question about your current
+                  wellness data, daily habits or how
+                  you are feeling.
+                </Text>
 
-              <Text style={styles.insightText}>
-                {aiContext.insights[0]}
-              </Text>
-            </View>
-          ) : null}
-
-          {/* INTRO + QUICK PROMPTS */}
-
-          {messages.length === 1 ? (
-            <View style={styles.intro}>
-              <Text style={styles.introEyebrow}>
-                PERSONAL WELLNESS ASSISTANT
-              </Text>
-
-              <Text style={styles.introTitle}>
-                What would you like to explore?
-              </Text>
-
-              <Text style={styles.introDescription}>
-                Ask about your current health state and
-                get guidance based on the latest
-                information available in the app.
-              </Text>
-
-              <View style={styles.promptGrid}>
-                {SUGGESTED_PROMPTS.map((prompt) => (
-                  <Pressable
-                    key={prompt.title}
-                    style={({ pressed }) => [
-                      styles.promptCard,
-                      pressed &&
-                        styles.promptCardPressed,
-                    ]}
-                    onPress={() =>
-                      sendMessage(prompt.text)
-                    }
-                    disabled={isTyping}
-                  >
-                    <View style={styles.promptIcon}>
-                      <Text style={styles.promptEmoji}>
-                        {prompt.icon}
-                      </Text>
-                    </View>
-
-                    <View style={styles.promptBottom}>
-                      <Text style={styles.promptTitle}>
-                        {prompt.title}
-                      </Text>
-
-                      <Text style={styles.promptArrow}>
-                        →
-                      </Text>
-                    </View>
-                  </Pressable>
-                ))}
-              </View>
-            </View>
-          ) : null}
-
-          {/* MESSAGES */}
-
-          <View style={styles.messagesList}>
-            {messages.map((item) => {
-              const isUser =
-                item.sender === 'user';
-
-              const isError =
-                item.id.endsWith('-error');
-
-              return (
-                <View
-                  key={item.id}
-                  style={[
-                    styles.messageRow,
-                    isUser &&
-                      styles.userMessageRow,
-                  ]}
-                >
-                  {!isUser ? (
-                    <View style={styles.botAvatar}>
-                      <Text style={styles.botAvatarText}>
-                        ✦
-                      </Text>
-                    </View>
-                  ) : null}
-
-                  <View
-                    style={[
-                      styles.messageBubble,
-                      isUser
-                        ? styles.userBubble
-                        : styles.botBubble,
-                    ]}
-                  >
-                    {!isUser ? (
-                      <Text style={styles.botLabel}>
-                        AI HEALTH ASSISTANT
-                      </Text>
-                    ) : null}
-
-                    <Text
-                      style={[
-                        styles.messageText,
-                        isUser
-                          ? styles.userText
-                          : styles.botText,
-                      ]}
-                    >
-                      {item.text}
-                    </Text>
-
-                    <Text
-                      style={[
-                        styles.messageTime,
-                        isUser
-                          ? styles.userTime
-                          : styles.botTime,
-                      ]}
-                    >
-                      {formatTime(item.timestamp)}
-                    </Text>
-
-                    {isError &&
-                    lastFailedMessage ? (
+                <View style={styles.promptGrid}>
+                  {SUGGESTED_PROMPTS.map(
+                    (prompt) => (
                       <Pressable
-                        style={styles.retryButton}
+                        key={prompt.title}
+                        accessibilityRole="button"
+                        accessibilityLabel={
+                          prompt.text
+                        }
+                        style={({ pressed }) => [
+                          styles.promptCard,
+                          pressed &&
+                            styles.promptPressed,
+                        ]}
                         onPress={() =>
                           sendMessage(
-                            lastFailedMessage,
+                            prompt.text,
                           )
                         }
                         disabled={isTyping}
                       >
-                        <Text style={styles.retryButtonText}>
-                          Try again
+                        <View style={styles.promptIcon}>
+                          <Text style={styles.promptIconText}>
+                            {prompt.icon}
+                          </Text>
+                        </View>
+
+                        <View style={styles.promptContent}>
+                          <Text style={styles.promptTitle}>
+                            {prompt.title}
+                          </Text>
+
+                          <Text
+                            style={styles.promptQuestion}
+                            numberOfLines={2}
+                          >
+                            {prompt.text}
+                          </Text>
+                        </View>
+
+                        <Text style={styles.promptArrow}>
+                          →
                         </Text>
                       </Pressable>
-                    ) : null}
-                  </View>
-                </View>
-              );
-            })}
-
-            {/* AI THINKING */}
-
-            {isTyping ? (
-              <View style={styles.messageRow}>
-                <View style={styles.botAvatar}>
-                  <Text style={styles.botAvatarText}>
-                    ✦
-                  </Text>
-                </View>
-
-                <View
-                  style={[
-                    styles.messageBubble,
-                    styles.botBubble,
-                    styles.typingBubble,
-                  ]}
-                >
-                  <View style={styles.typingHeader}>
-                    <View style={styles.typingDot} />
-
-                    <View
-                      style={[
-                        styles.typingDot,
-                        styles.typingDotTwo,
-                      ]}
-                    />
-
-                    <View
-                      style={[
-                        styles.typingDot,
-                        styles.typingDotThree,
-                      ]}
-                    />
-
-                    <Text style={styles.typingLabel}>
-                      Analysing live context
-                    </Text>
-                  </View>
-
-                  <Text style={styles.typingText}>
-                    Preparing a personalised response...
-                  </Text>
+                    ),
+                  )}
                 </View>
               </View>
             ) : null}
-          </View>
 
-          {/* WELLNESS SNAPSHOT */}
+            {/* MESSAGES */}
 
-          {hasContext ? (
-            <View style={styles.snapshotCard}>
-              <View style={styles.snapshotHeader}>
-                <View>
-                  <Text style={styles.snapshotEyebrow}>
-                    CURRENT STATE
-                  </Text>
+            <View style={styles.messagesList}>
+              {messages.map((item) => {
+                const isUser =
+                  item.sender === 'user';
 
-                  <Text style={styles.snapshotTitle}>
-                    Wellness snapshot
-                  </Text>
-                </View>
+                const isError =
+                  item.id.endsWith('-error');
 
-                {health.wellnessScore !== null ? (
-                  <View style={styles.scoreBadge}>
-                    <Text style={styles.scoreValue}>
-                      {health.wellnessScore}
-                    </Text>
+                return (
+                  <View
+                    key={item.id}
+                    style={[
+                      styles.messageRow,
+                      isUser &&
+                        styles.userMessageRow,
+                    ]}
+                  >
+                    {!isUser ? (
+                      <View style={styles.botAvatar}>
+                        <Text style={styles.botAvatarText}>
+                          ✦
+                        </Text>
+                      </View>
+                    ) : null}
 
-                    <Text style={styles.scoreUnit}>
-                      /100
+                    <View
+                      style={[
+                        styles.messageBubble,
+                        isUser
+                          ? styles.userBubble
+                          : styles.botBubble,
+                      ]}
+                    >
+                      {!isUser ? (
+                        <View
+                          style={
+                            styles.botMessageHeader
+                          }
+                        >
+                          <Text style={styles.botLabel}>
+                            AI HEALTH ASSISTANT
+                          </Text>
+
+                          <View
+                            style={
+                              styles.botStatusDot
+                            }
+                          />
+                        </View>
+                      ) : null}
+
+                      <Text
+                        style={[
+                          styles.messageText,
+                          isUser
+                            ? styles.userText
+                            : styles.botText,
+                        ]}
+                      >
+                        {item.text}
+                      </Text>
+
+                      <Text
+                        style={[
+                          styles.messageTime,
+                          isUser
+                            ? styles.userTime
+                            : styles.botTime,
+                        ]}
+                      >
+                        {formatTime(
+                          item.timestamp,
+                        )}
+                      </Text>
+
+                      {isError &&
+                      lastFailedMessage ? (
+                        <Pressable
+                          accessibilityRole="button"
+                          accessibilityLabel="Try sending the message again"
+                          style={
+                            styles.retryButton
+                          }
+                          onPress={() =>
+                            sendMessage(
+                              lastFailedMessage,
+                            )
+                          }
+                          disabled={isTyping}
+                        >
+                          <Text
+                            style={
+                              styles.retryButtonText
+                            }
+                          >
+                            Try again →
+                          </Text>
+                        </Pressable>
+                      ) : null}
+                    </View>
+                  </View>
+                );
+              })}
+
+              {isTyping ? (
+                <View style={styles.messageRow}>
+                  <View style={styles.botAvatar}>
+                    <Text style={styles.botAvatarText}>
+                      ✦
                     </Text>
                   </View>
-                ) : null}
-              </View>
 
-              <View style={styles.snapshotGrid}>
-                <SnapshotMetric
-                  icon="❤️"
-                  label="Heart rate"
-                  value={
-                    health.heartRate !== null
-                      ? `${health.heartRate}`
-                      : '--'
-                  }
-                  unit="bpm"
-                />
+                  <View
+                    style={[
+                      styles.messageBubble,
+                      styles.botBubble,
+                      styles.typingBubble,
+                    ]}
+                  >
+                    <View style={styles.typingHeader}>
+                      <View
+                        style={styles.typingDot}
+                      />
 
-                <SnapshotMetric
-                  icon="👣"
-                  label="Steps"
-                  value={
-                    health.steps > 0
-                      ? health.steps.toLocaleString()
-                      : '--'
-                  }
-                  unit="today"
-                />
+                      <View
+                        style={[
+                          styles.typingDot,
+                          styles.typingDotTwo,
+                        ]}
+                      />
 
-                <SnapshotMetric
-                  icon="💧"
-                  label="Hydration"
-                  value={
-                    health.waterIntake > 0
-                      ? health.waterIntake.toFixed(1)
-                      : '--'
-                  }
-                  unit="L"
-                />
+                      <View
+                        style={[
+                          styles.typingDot,
+                          styles.typingDotThree,
+                        ]}
+                      />
 
-                <SnapshotMetric
-                  icon="😴"
-                  label="Sleep"
-                  value={
-                    health.sleepHours !== null
-                      ? health.sleepHours.toFixed(1)
-                      : '--'
-                  }
-                  unit="hrs"
-                />
-              </View>
+                      <Text
+                        style={styles.typingLabel}
+                      >
+                        AI is thinking
+                      </Text>
+                    </View>
+
+                    <Text style={styles.typingText}>
+                      Reviewing your available wellness
+                      context...
+                    </Text>
+                  </View>
+                </View>
+              ) : null}
             </View>
-          ) : null}
 
-          <View style={styles.bottomSpace} />
+            {/* SNAPSHOT */}
+
+            {hasContext ? (
+              <View style={styles.snapshotCard}>
+                <View style={styles.snapshotHeader}>
+                  <View>
+                    <Text style={styles.snapshotEyebrow}>
+                      CURRENT CONTEXT
+                    </Text>
+
+                    <Text style={styles.snapshotTitle}>
+                      Wellness snapshot
+                    </Text>
+                  </View>
+
+                  {health.wellnessScore !== null ? (
+                    <View style={styles.scoreBadge}>
+                      <Text style={styles.scoreValue}>
+                        {Math.round(
+                          health.wellnessScore,
+                        )}
+                      </Text>
+
+                      <Text style={styles.scoreUnit}>
+                        /100
+                      </Text>
+                    </View>
+                  ) : null}
+                </View>
+
+                <View style={styles.snapshotGrid}>
+                  <SnapshotMetric
+                    icon="♥"
+                    label="Heart rate"
+                    value={
+                      health.heartRate !== null
+                        ? String(
+                            health.heartRate,
+                          )
+                        : '--'
+                    }
+                    unit="bpm"
+                  />
+
+                  <SnapshotMetric
+                    icon="⌁"
+                    label="Steps"
+                    value={
+                      health.steps > 0
+                        ? health.steps.toLocaleString()
+                        : '--'
+                    }
+                    unit="today"
+                  />
+
+                  <SnapshotMetric
+                    icon="◊"
+                    label="Hydration"
+                    value={
+                      health.waterIntake > 0
+                        ? health.waterIntake.toFixed(
+                            1,
+                          )
+                        : '--'
+                    }
+                    unit="L"
+                  />
+
+                  <SnapshotMetric
+                    icon="☾"
+                    label="Sleep"
+                    value={
+                      health.sleepHours !== null
+                        ? health.sleepHours.toFixed(
+                            1,
+                          )
+                        : '--'
+                    }
+                    unit="hrs"
+                  />
+                </View>
+              </View>
+            ) : null}
+
+            <View style={styles.bottomSpace} />
+          </View>
         </ScrollView>
 
-        {/* INPUT */}
+        {/* COMPOSER */}
 
         <View style={styles.inputArea}>
+          <View style={styles.inputHint}>
+            <View style={styles.inputHintDot} />
+
+            <Text style={styles.inputHintText}>
+              {isDemo
+                ? 'AI is using simulated wellness context'
+                : hasContext
+                  ? 'AI is using your available wellness context'
+                  : 'Add health data for more personalised answers'}
+            </Text>
+          </View>
+
           <View style={styles.inputRow}>
             <TextInput
+              accessibilityLabel="Message the AI Health Assistant"
               style={styles.input}
               value={message}
               onChangeText={setMessage}
               placeholder={
                 liveStatus
-                  ? 'Ask about your live health...'
-                  : 'Ask about your health...'
+                  ? 'Ask about your current health...'
+                  : 'Ask your health assistant...'
               }
               placeholderTextColor={
                 colors.textSoft
@@ -862,14 +1120,19 @@ export default function ChatbotScreen() {
               maxLength={500}
               editable={!isTyping}
               textAlignVertical="center"
+              returnKeyType="send"
               onSubmitEditing={() => {
-                if (Platform.OS !== 'ios') {
+                if (
+                  Platform.OS !== 'ios'
+                ) {
                   sendMessage();
                 }
               }}
             />
 
             <Pressable
+              accessibilityRole="button"
+              accessibilityLabel="Send message"
               style={[
                 styles.sendButton,
                 (!message.trim() ||
@@ -896,9 +1159,8 @@ export default function ChatbotScreen() {
           </View>
 
           <Text style={styles.disclaimer}>
-            General wellness information only. AI
-            guidance is not a diagnosis or emergency
-            medical service.
+            General wellness information only. AI guidance
+            is not a diagnosis or emergency medical service.
           </Text>
         </View>
       </KeyboardAvoidingView>
@@ -906,55 +1168,39 @@ export default function ChatbotScreen() {
   );
 }
 
-/* ========================================================================== */
-/* LIVE METRIC                                                                */
-/* ========================================================================== */
+/* -------------------------------------------------------------------------- */
+/* CONTEXT METRIC                                                             */
+/* -------------------------------------------------------------------------- */
 
-function LiveMetric({
+function ContextMetric({
   icon,
   label,
   value,
   unit,
-  accent,
 }: {
   icon: string;
   label: string;
   value: string;
   unit: string;
-  accent: string;
 }) {
   return (
-    <View style={styles.liveMetric}>
-      <View
-        style={[
-          styles.liveMetricIcon,
-          {
-            backgroundColor: `${accent}18`,
-          },
-        ]}
-      >
-        <Text
-          style={[
-            styles.liveMetricIconText,
-            {
-              color: accent,
-            },
-          ]}
-        >
+    <View style={styles.contextMetric}>
+      <View style={styles.contextMetricIcon}>
+        <Text style={styles.contextMetricIconText}>
           {icon}
         </Text>
       </View>
 
-      <Text style={styles.liveMetricLabel}>
+      <Text style={styles.contextMetricLabel}>
         {label}
       </Text>
 
-      <View style={styles.liveMetricValueRow}>
-        <Text style={styles.liveMetricValue}>
+      <View style={styles.contextMetricValueRow}>
+        <Text style={styles.contextMetricValue}>
           {value}
         </Text>
 
-        <Text style={styles.liveMetricUnit}>
+        <Text style={styles.contextMetricUnit}>
           {unit}
         </Text>
       </View>
@@ -962,9 +1208,9 @@ function LiveMetric({
   );
 }
 
-/* ========================================================================== */
+/* -------------------------------------------------------------------------- */
 /* SNAPSHOT METRIC                                                            */
-/* ========================================================================== */
+/* -------------------------------------------------------------------------- */
 
 function SnapshotMetric({
   icon,
@@ -1004,112 +1250,9 @@ function SnapshotMetric({
   );
 }
 
-/* ========================================================================== */
-/* FALLBACK                                                                   */
-/* ========================================================================== */
-
-function generateFallback(
-  question: string,
-  health: HealthState,
-): string {
-  const lower = question.toLowerCase();
-
-  if (
-    lower.includes('heart') ||
-    lower.includes('pulse') ||
-    lower.includes('bpm')
-  ) {
-    if (health.heartRate !== null) {
-      return (
-        `Your latest ${
-          health.isDemoDevice
-            ? 'simulated '
-            : ''
-        }reading is ${health.heartRate} bpm. ` +
-        'A single reading is only one part of your overall health picture. ' +
-        'If you experience concerning symptoms such as chest pain, severe ' +
-        'breathlessness or fainting, seek appropriate medical attention.'
-      );
-    }
-
-    return (
-      'I do not currently have a live heart-rate reading. ' +
-      'Start Live Health to provide current monitoring data.'
-    );
-  }
-
-  if (
-    lower.includes('sleep') ||
-    lower.includes('recovery') ||
-    lower.includes('tired')
-  ) {
-    if (health.sleepHours !== null) {
-      return (
-        `You currently have ${health.sleepHours.toFixed(
-          1,
-        )} hours of recorded sleep. ` +
-        'Keeping a consistent sleep schedule and allowing enough recovery time ' +
-        'can support general wellbeing.'
-      );
-    }
-
-    return (
-      'Sleep data is not available yet. Add your sleep information ' +
-      'so the assistant can use it in your wellness context.'
-    );
-  }
-
-  if (
-    lower.includes('water') ||
-    lower.includes('hydration')
-  ) {
-    if (health.waterIntake > 0) {
-      return (
-        `You have recorded ${health.waterIntake.toFixed(
-          1,
-        )} litres of water so far. ` +
-        'Try to spread your fluid intake throughout the day.'
-      );
-    }
-
-    return (
-      'There is no hydration data available yet. Add your water intake ' +
-      'to make the health context more useful.'
-    );
-  }
-
-  if (
-    lower.includes('step') ||
-    lower.includes('walk') ||
-    lower.includes('exercise')
-  ) {
-    return (
-      `You have recorded ${health.steps.toLocaleString()} steps today. ` +
-      'If you want to increase activity, a short comfortable walk can ' +
-      'be a practical option.'
-    );
-  }
-
-  return (
-    'The AI service is temporarily unavailable. Your message was received, ' +
-    'but I could not generate a live response. Please try again.'
-  );
-}
-
-/* ========================================================================== */
-/* TIME                                                                       */
-/* ========================================================================== */
-
-function formatTime(date: Date): string {
-  return date.toLocaleTimeString([], {
-    hour: '2-digit',
-    minute: '2-digit',
-  });
-}
-
-/* ========================================================================== */
+/* -------------------------------------------------------------------------- */
 /* STYLES                                                                     */
-/* ========================================================================== */
+/* -------------------------------------------------------------------------- */
 
 const styles = StyleSheet.create({
   safeArea: {
@@ -1121,6 +1264,8 @@ const styles = StyleSheet.create({
     flex: 1,
     backgroundColor: colors.background,
   },
+
+  /* HEADER */
 
   header: {
     minHeight: 76,
@@ -1143,11 +1288,6 @@ const styles = StyleSheet.create({
     justifyContent: 'center',
   },
 
-  pressedSmall: {
-    opacity: 0.7,
-    transform: [{ scale: 0.96 }],
-  },
-
   backIcon: {
     fontSize: 30,
     lineHeight: 30,
@@ -1156,8 +1296,8 @@ const styles = StyleSheet.create({
   },
 
   aiAvatar: {
-    width: 44,
-    height: 44,
+    width: 45,
+    height: 45,
     borderRadius: 15,
     backgroundColor: colors.primary,
     alignItems: 'center',
@@ -1205,8 +1345,8 @@ const styles = StyleSheet.create({
   },
 
   clearButton: {
-    width: 40,
-    height: 40,
+    width: 42,
+    height: 42,
     borderRadius: 13,
     alignItems: 'center',
     justifyContent: 'center',
@@ -1216,6 +1356,13 @@ const styles = StyleSheet.create({
     fontSize: 23,
     color: colors.textMuted,
   },
+
+  pressedSmall: {
+    opacity: 0.7,
+    transform: [{ scale: 0.96 }],
+  },
+
+  /* CHAT */
 
   chat: {
     flex: 1,
@@ -1227,7 +1374,22 @@ const styles = StyleSheet.create({
     paddingTop: spacing.lg,
   },
 
-  realtimeCard: {
+  chatContentWide: {
+    paddingBottom: spacing.xl,
+  },
+
+  contentColumn: {
+    width: '100%',
+  },
+
+  contentColumnWide: {
+    maxWidth: 920,
+    alignSelf: 'center',
+  },
+
+  /* CONTEXT */
+
+  contextCard: {
     backgroundColor: colors.surface,
     borderWidth: 1,
     borderColor: colors.border,
@@ -1237,129 +1399,140 @@ const styles = StyleSheet.create({
     ...shadows.card,
   },
 
-  realtimeHeader: {
+  contextTop: {
     flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'space-between',
   },
 
-  realtimeTitleArea: {
+  contextIdentity: {
+    flex: 1,
     flexDirection: 'row',
     alignItems: 'center',
-    flex: 1,
+    minWidth: 0,
   },
 
-  realtimeIcon: {
-    width: 43,
-    height: 43,
+  contextIcon: {
+    width: 44,
+    height: 44,
     borderRadius: 14,
     backgroundColor: colors.primaryLight,
     alignItems: 'center',
     justifyContent: 'center',
   },
 
-  realtimeIconText: {
+  contextIconText: {
     fontSize: 20,
-    color: colors.primary,
     fontWeight: '900',
+    color: colors.primary,
   },
 
-  realtimeTitleContent: {
+  contextCopy: {
+    flex: 1,
     marginLeft: 10,
   },
 
-  realtimeTitle: {
+  contextTitle: {
     ...typography.bodySmall,
     color: colors.textStrong,
     fontWeight: '900',
   },
 
-  realtimeSubtitle: {
+  contextSubtitle: {
     ...typography.caption,
     color: colors.textMuted,
     marginTop: 2,
   },
 
-  liveBadge: {
-    flexDirection: 'row',
-    alignItems: 'center',
+  contextBadge: {
+    minHeight: 26,
+    borderRadius: radii.pill,
     paddingHorizontal: 9,
     paddingVertical: 6,
-    borderRadius: radii.pill,
+    flexDirection: 'row',
+    alignItems: 'center',
+    marginLeft: 8,
+  },
+
+  contextBadgeLive: {
     backgroundColor: colors.successLight,
   },
 
-  liveBadgeOffline: {
+  contextBadgeReady: {
     backgroundColor: colors.surfaceMuted,
   },
 
-  liveBadgeDot: {
+  contextBadgeDot: {
     width: 6,
     height: 6,
-    borderRadius: 99,
+    borderRadius: 3,
     backgroundColor: colors.live,
     marginRight: 5,
   },
 
-  liveBadgeDotOffline: {
-    backgroundColor: colors.offline,
-  },
-
-  liveBadgeText: {
+  contextBadgeText: {
     ...typography.caption,
-    fontSize: 9,
-    color: colors.success,
+    fontSize: 8,
     fontWeight: '900',
-    letterSpacing: 0.5,
+    letterSpacing: 0.6,
   },
 
-  liveBadgeTextOffline: {
+  contextBadgeTextLive: {
+    color: colors.success,
+  },
+
+  contextBadgeTextReady: {
     color: colors.textMuted,
   },
 
-  liveMetrics: {
+  contextMetrics: {
     flexDirection: 'row',
     justifyContent: 'space-between',
     marginTop: 17,
+    paddingTop: 14,
+    borderTopWidth: 1,
+    borderTopColor: colors.border,
   },
 
-  liveMetric: {
+  contextMetric: {
     width: '23.5%',
     alignItems: 'center',
   },
 
-  liveMetricIcon: {
+  contextMetricIcon: {
     width: 35,
     height: 35,
     borderRadius: 11,
+    backgroundColor: colors.primarySoft,
     alignItems: 'center',
     justifyContent: 'center',
   },
 
-  liveMetricIconText: {
+  contextMetricIconText: {
     fontSize: 15,
     fontWeight: '900',
+    color: colors.primary,
   },
 
-  liveMetricLabel: {
+  contextMetricLabel: {
     ...typography.caption,
     color: colors.textMuted,
-    marginTop: 6,
+    marginTop: 5,
   },
 
-  liveMetricValueRow: {
+  contextMetricValueRow: {
     flexDirection: 'row',
     alignItems: 'baseline',
     marginTop: 1,
   },
 
-  liveMetricValue: {
+  contextMetricValue: {
     fontSize: 15,
     fontWeight: '900',
     color: colors.textStrong,
   },
 
-  liveMetricUnit: {
+  contextMetricUnit: {
     fontSize: 8,
     color: colors.textSoft,
     marginLeft: 2,
@@ -1372,15 +1545,27 @@ const styles = StyleSheet.create({
     padding: 11,
     borderRadius: radii.md,
     backgroundColor: colors.surfaceSoft,
+    borderWidth: 1,
+    borderColor: colors.border,
   },
 
   waitingIcon: {
-    fontSize: 27,
-    color: colors.textSoft,
-    marginRight: 10,
+    width: 34,
+    height: 34,
+    borderRadius: 11,
+    backgroundColor: colors.primaryLight,
+    alignItems: 'center',
+    justifyContent: 'center',
+    marginRight: 9,
   },
 
-  waitingContent: {
+  waitingIconText: {
+    fontSize: 20,
+    fontWeight: '700',
+    color: colors.primary,
+  },
+
+  waitingCopy: {
     flex: 1,
   },
 
@@ -1406,7 +1591,7 @@ const styles = StyleSheet.create({
     borderTopColor: colors.border,
   },
 
-  devicePulse: {
+  deviceIndicator: {
     width: 34,
     height: 34,
     borderRadius: 12,
@@ -1415,14 +1600,14 @@ const styles = StyleSheet.create({
     justifyContent: 'center',
   },
 
-  devicePulseInner: {
+  deviceIndicatorInner: {
     width: 9,
     height: 9,
     borderRadius: 99,
     backgroundColor: colors.live,
   },
 
-  deviceContent: {
+  deviceCopy: {
     flex: 1,
     marginLeft: 9,
   },
@@ -1450,8 +1635,15 @@ const styles = StyleSheet.create({
   },
 
   demoNoticeIcon: {
+    width: 17,
+    height: 17,
+    borderRadius: 9,
+    backgroundColor: colors.primaryLight,
+    textAlign: 'center',
+    lineHeight: 17,
+    fontSize: 9,
+    fontWeight: '900',
     color: colors.primary,
-    fontSize: 14,
     marginRight: 7,
   },
 
@@ -1462,7 +1654,10 @@ const styles = StyleSheet.create({
     lineHeight: 15,
   },
 
-  askCurrentCard: {
+  /* ASK */
+
+  askCard: {
+    minHeight: 74,
     backgroundColor: colors.primary,
     borderRadius: radii.xl,
     padding: spacing.lg,
@@ -1472,50 +1667,61 @@ const styles = StyleSheet.create({
     ...shadows.elevated,
   },
 
-  askCurrentCardPressed: {
+  askCardPressed: {
     opacity: 0.9,
     transform: [{ scale: 0.985 }],
   },
 
-  askCurrentIcon: {
-    width: 42,
-    height: 42,
+  askIcon: {
+    width: 43,
+    height: 43,
     borderRadius: 14,
-    backgroundColor: 'rgba(255,255,255,0.16)',
+    backgroundColor: 'rgba(255,255,255,0.15)',
     alignItems: 'center',
     justifyContent: 'center',
   },
 
-  askCurrentIconText: {
+  askIconText: {
     color: '#FFFFFF',
     fontSize: 20,
     fontWeight: '900',
   },
 
-  askCurrentContent: {
+  askCopy: {
     flex: 1,
     marginLeft: 11,
     marginRight: 8,
   },
 
-  askCurrentTitle: {
+  askTitle: {
     ...typography.bodySmall,
     color: '#FFFFFF',
     fontWeight: '900',
   },
 
-  askCurrentSubtitle: {
+  askSubtitle: {
     ...typography.caption,
     color: 'rgba(255,255,255,0.78)',
     lineHeight: 16,
     marginTop: 3,
   },
 
-  askCurrentArrow: {
-    color: '#FFFFFF',
-    fontSize: 22,
-    fontWeight: '800',
+  askArrowCircle: {
+    width: 31,
+    height: 31,
+    borderRadius: 16,
+    backgroundColor: 'rgba(255,255,255,0.14)',
+    alignItems: 'center',
+    justifyContent: 'center',
   },
+
+  askArrow: {
+    color: '#FFFFFF',
+    fontSize: 17,
+    fontWeight: '900',
+  },
+
+  /* INSIGHT */
 
   insightCard: {
     backgroundColor: colors.primarySoft,
@@ -1523,7 +1729,7 @@ const styles = StyleSheet.create({
     borderColor: colors.primaryLight,
     borderRadius: radii.xl,
     padding: spacing.lg,
-    marginBottom: spacing.xl,
+    marginBottom: spacing.lg,
   },
 
   insightHeader: {
@@ -1532,8 +1738,8 @@ const styles = StyleSheet.create({
   },
 
   insightIcon: {
-    width: 37,
-    height: 37,
+    width: 38,
+    height: 38,
     borderRadius: 12,
     backgroundColor: colors.surface,
     alignItems: 'center',
@@ -1544,7 +1750,8 @@ const styles = StyleSheet.create({
     fontSize: 17,
   },
 
-  insightTitleArea: {
+  insightCopy: {
+    flex: 1,
     marginLeft: 9,
   },
 
@@ -1560,6 +1767,22 @@ const styles = StyleSheet.create({
     marginTop: 1,
   },
 
+  aiPill: {
+    minWidth: 31,
+    height: 27,
+    borderRadius: 10,
+    backgroundColor: colors.surface,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+
+  aiPillText: {
+    fontSize: 8,
+    fontWeight: '900',
+    color: colors.primary,
+    letterSpacing: 0.5,
+  },
+
   insightText: {
     ...typography.bodySmall,
     color: colors.textStrong,
@@ -1567,20 +1790,31 @@ const styles = StyleSheet.create({
     marginTop: 11,
   },
 
+  /* INTRO */
+
   intro: {
     marginBottom: spacing.xl,
   },
 
-  introEyebrow: {
+  introBadge: {
+    alignSelf: 'flex-start',
+    backgroundColor: colors.primaryLight,
+    borderRadius: radii.pill,
+    paddingHorizontal: 9,
+    paddingVertical: 5,
+  },
+
+  introBadgeText: {
     ...typography.overline,
-    color: colors.primary,
-    letterSpacing: 1.1,
+    fontSize: 7,
+    color: colors.primaryDark,
+    letterSpacing: 1,
   },
 
   introTitle: {
     ...typography.h1,
     color: colors.textStrong,
-    marginTop: 3,
+    marginTop: 9,
   },
 
   introDescription: {
@@ -1588,19 +1822,19 @@ const styles = StyleSheet.create({
     color: colors.textMuted,
     lineHeight: 19,
     marginTop: 5,
+    maxWidth: 620,
   },
 
   promptGrid: {
     flexDirection: 'row',
     flexWrap: 'wrap',
-    justifyContent: 'space-between',
     gap: 9,
     marginTop: 15,
   },
 
   promptCard: {
     width: '48.3%',
-    minHeight: 98,
+    minHeight: 112,
     backgroundColor: colors.surface,
     borderWidth: 1,
     borderColor: colors.border,
@@ -1609,7 +1843,7 @@ const styles = StyleSheet.create({
     ...shadows.card,
   },
 
-  promptCardPressed: {
+  promptPressed: {
     transform: [{ scale: 0.98 }],
     backgroundColor: colors.primaryLight,
   },
@@ -1623,15 +1857,15 @@ const styles = StyleSheet.create({
     justifyContent: 'center',
   },
 
-  promptEmoji: {
+  promptIconText: {
     fontSize: 17,
+    color: colors.primary,
+    fontWeight: '900',
   },
 
-  promptBottom: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'space-between',
-    marginTop: 10,
+  promptContent: {
+    flex: 1,
+    marginTop: 9,
   },
 
   promptTitle: {
@@ -1640,11 +1874,22 @@ const styles = StyleSheet.create({
     fontWeight: '800',
   },
 
+  promptQuestion: {
+    ...typography.caption,
+    color: colors.textMuted,
+    lineHeight: 14,
+    marginTop: 3,
+  },
+
   promptArrow: {
+    alignSelf: 'flex-end',
     color: colors.primary,
     fontSize: 18,
     fontWeight: '800',
+    marginTop: 4,
   },
+
+  /* MESSAGES */
 
   messagesList: {
     gap: 12,
@@ -1661,8 +1906,8 @@ const styles = StyleSheet.create({
   },
 
   botAvatar: {
-    width: 31,
-    height: 31,
+    width: 32,
+    height: 32,
     borderRadius: 11,
     backgroundColor: colors.primary,
     alignItems: 'center',
@@ -1697,12 +1942,25 @@ const styles = StyleSheet.create({
     borderBottomRightRadius: 5,
   },
 
+  botMessageHeader: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    marginBottom: 5,
+  },
+
   botLabel: {
     ...typography.overline,
     color: colors.primary,
     fontSize: 8,
     letterSpacing: 0.8,
-    marginBottom: 5,
+  },
+
+  botStatusDot: {
+    width: 5,
+    height: 5,
+    borderRadius: 3,
+    backgroundColor: colors.live,
+    marginLeft: 5,
   },
 
   messageText: {
@@ -1786,6 +2044,8 @@ const styles = StyleSheet.create({
     marginTop: 5,
   },
 
+  /* SNAPSHOT */
+
   snapshotCard: {
     backgroundColor: colors.surface,
     borderWidth: 1,
@@ -1816,7 +2076,7 @@ const styles = StyleSheet.create({
   },
 
   scoreBadge: {
-    minWidth: 54,
+    minWidth: 58,
     height: 45,
     borderRadius: 15,
     backgroundColor: colors.primaryLight,
@@ -1827,7 +2087,7 @@ const styles = StyleSheet.create({
   },
 
   scoreValue: {
-    fontSize: 16,
+    fontSize: 17,
     fontWeight: '900',
     color: colors.primaryDark,
   },
@@ -1865,6 +2125,7 @@ const styles = StyleSheet.create({
 
   snapshotIconText: {
     fontSize: 14,
+    color: colors.primary,
   },
 
   snapshotContent: {
@@ -1899,14 +2160,37 @@ const styles = StyleSheet.create({
     height: 20,
   },
 
+  /* INPUT */
+
   inputArea: {
     backgroundColor: colors.surface,
     borderTopWidth: 1,
     borderTopColor: colors.border,
     paddingHorizontal: spacing.lg,
-    paddingTop: 10,
+    paddingTop: 8,
     paddingBottom:
       Platform.OS === 'ios' ? 9 : 8,
+  },
+
+  inputHint: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    marginBottom: 6,
+  },
+
+  inputHintDot: {
+    width: 5,
+    height: 5,
+    borderRadius: 3,
+    backgroundColor: colors.primary,
+    marginRight: 5,
+  },
+
+  inputHintText: {
+    ...typography.caption,
+    fontSize: 8,
+    color: colors.textSoft,
   },
 
   inputRow: {

@@ -1,3 +1,4 @@
+
 import React from 'react';
 import {
   StyleSheet,
@@ -16,16 +17,31 @@ export default function WellnessHero({
   label,
   insight,
 }: Props) {
-  const safeScore =
-    score === null ? 0 : Math.max(0, Math.min(100, score));
+  const hasScore =
+    score !== null && Number.isFinite(score);
+
+  const safeScore = hasScore
+    ? Math.max(0, Math.min(100, score as number))
+    : 0;
+
+  const scoreDisplay = hasScore
+    ? String(Math.round(safeScore))
+    : '--';
+
+  const statusLabel = hasScore
+    ? label
+    : 'Awaiting data';
 
   return (
     <View style={styles.container}>
-      <View style={styles.topRow}>
-        <View>
-          <Text style={styles.eyebrow}>
-            TODAY'S WELLNESS
-          </Text>
+      <View style={styles.headerRow}>
+        <View style={styles.headerCopy}>
+          <View style={styles.eyebrowRow}>
+            <View style={styles.statusDot} />
+            <Text style={styles.eyebrow}>
+              TODAY'S WELLNESS
+            </Text>
+          </View>
 
           <Text style={styles.subtitle}>
             Your current overall wellness status
@@ -34,37 +50,51 @@ export default function WellnessHero({
 
         <View
           style={[
-            styles.pill,
-            score !== null && styles.pillActive,
+            styles.statusPill,
+            hasScore
+              ? styles.statusPillActive
+              : styles.statusPillWaiting,
           ]}
         >
           <Text
             style={[
-              styles.pillText,
-              score !== null && styles.pillTextActive,
+              styles.statusPillText,
+              hasScore
+                ? styles.statusPillTextActive
+                : styles.statusPillTextWaiting,
             ]}
+            numberOfLines={1}
           >
-            {label}
+            {statusLabel}
           </Text>
         </View>
       </View>
 
       <View style={styles.mainRow}>
-        <View style={styles.scoreCircle}>
-          <Text style={styles.score}>
-            {score ?? '--'}
-          </Text>
+        <View style={styles.scoreWrapper}>
+          <View style={styles.scoreCircleOuter}>
+            <View style={styles.scoreCircle}>
+              <Text
+                style={[
+                  styles.score,
+                  !hasScore && styles.scoreUnavailable,
+                ]}
+              >
+                {scoreDisplay}
+              </Text>
 
-          <Text style={styles.outOf}>
-            /100
+              <Text style={styles.outOf}>/100</Text>
+            </View>
+          </View>
+
+          <Text style={styles.scoreCaption}>
+            WELLNESS SCORE
           </Text>
         </View>
 
         <View style={styles.content}>
           <Text style={styles.title}>
-            {score === null
-              ? 'No health data yet'
-              : label}
+            {hasScore ? label : 'No wellness score yet'}
           </Text>
 
           <Text style={styles.insight}>
@@ -73,15 +103,53 @@ export default function WellnessHero({
         </View>
       </View>
 
-      <View style={styles.track}>
+      <View style={styles.progressSection}>
+        <View style={styles.progressHeader}>
+          <Text style={styles.progressLabel}>
+            Overall wellness
+          </Text>
+
+          <Text style={styles.progressValue}>
+            {hasScore
+              ? `${Math.round(safeScore)}%`
+              : 'Waiting'}
+          </Text>
+        </View>
+
         <View
-          style={[
-            styles.fill,
-            {
-              width: `${safeScore}%`,
-            },
-          ]}
-        />
+          style={styles.track}
+          accessibilityRole="progressbar"
+          accessibilityLabel="Overall wellness score"
+          accessibilityValue={{
+            min: 0,
+            max: 100,
+            now: hasScore ? Math.round(safeScore) : 0,
+          }}
+        >
+          <View
+            style={[
+              styles.fill,
+              { width: `${safeScore}%` },
+            ]}
+          />
+        </View>
+      </View>
+
+      <View style={styles.contextStrip}>
+        <View style={styles.contextIcon}>
+          <Text style={styles.contextIconText}>i</Text>
+        </View>
+
+        <View style={styles.contextCopy}>
+          <Text style={styles.contextTitle}>
+            Wellness overview
+          </Text>
+
+          <Text style={styles.contextText}>
+            Based on the health information currently available in
+            your prototype.
+          </Text>
+        </View>
       </View>
     </View>
   );
@@ -92,110 +160,264 @@ const styles = StyleSheet.create({
     width: '100%',
     maxWidth: 1180,
     alignSelf: 'center',
-    backgroundColor: '#FFFFFF',
+    backgroundColor: '#182238',
     borderRadius: 24,
     borderWidth: 1,
-    borderColor: '#DCEEEA',
+    borderColor: '#2D3B55',
     padding: 22,
     marginBottom: 18,
+    shadowColor: '#000000',
+    shadowOffset: { width: 0, height: 5 },
+    shadowOpacity: 0.18,
+    shadowRadius: 15,
+    elevation: 3,
   },
 
-  topRow: {
+  headerRow: {
     flexDirection: 'row',
     justifyContent: 'space-between',
     alignItems: 'flex-start',
+    gap: 10,
+  },
+
+  headerCopy: {
+    flex: 1,
+    minWidth: 0,
+    paddingRight: 4,
+  },
+
+  eyebrowRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+  },
+
+  statusDot: {
+    width: 7,
+    height: 7,
+    borderRadius: 4,
+    backgroundColor: '#4BD6A0',
+    marginRight: 7,
   },
 
   eyebrow: {
-    fontSize: 10,
-    fontWeight: '900',
-    letterSpacing: 1.3,
-    color: '#2B7E6E',
+    fontSize: 11,
+    lineHeight: 15,
+    fontWeight: '800',
+    letterSpacing: 1.1,
+    color: '#79E0B8',
   },
 
   subtitle: {
-    fontSize: 11,
-    color: '#7A8D9B',
-    marginTop: 4,
+    fontSize: 12,
+    lineHeight: 18,
+    color: '#9BAAC2',
+    marginTop: 6,
   },
 
-  pill: {
-    backgroundColor: '#F1F4F5',
-    paddingHorizontal: 10,
-    paddingVertical: 6,
-    borderRadius: 20,
+  statusPill: {
+    minHeight: 32,
+    maxWidth: '48%',
+    borderRadius: 16,
+    paddingHorizontal: 11,
+    paddingVertical: 7,
+    alignItems: 'center',
+    justifyContent: 'center',
   },
 
-  pillActive: {
-    backgroundColor: '#E2F5EF',
+  statusPillActive: {
+    backgroundColor: '#153D37',
+    borderWidth: 1,
+    borderColor: '#28685A',
   },
 
-  pillText: {
-    fontSize: 9,
+  statusPillWaiting: {
+    backgroundColor: '#26334A',
+    borderWidth: 1,
+    borderColor: '#35445E',
+  },
+
+  statusPillText: {
+    fontSize: 10,
+    lineHeight: 14,
     fontWeight: '800',
-    color: '#7C8B94',
+    letterSpacing: 0.2,
   },
 
-  pillTextActive: {
-    color: '#217560',
+  statusPillTextActive: {
+    color: '#85E7C1',
+  },
+
+  statusPillTextWaiting: {
+    color: '#AFBDD1',
   },
 
   mainRow: {
     flexDirection: 'row',
     alignItems: 'center',
-    marginTop: 20,
+    marginTop: 24,
   },
 
-  scoreCircle: {
-    width: 106,
-    height: 106,
-    borderRadius: 53,
-    backgroundColor: '#E7F7F2',
+  scoreWrapper: {
+    width: 124,
+    flexShrink: 0,
     alignItems: 'center',
-    justifyContent: 'center',
     marginRight: 20,
   },
 
+  scoreCircleOuter: {
+    width: 116,
+    height: 116,
+    borderRadius: 58,
+    backgroundColor: '#173D3B',
+    borderWidth: 7,
+    borderColor: '#347A69',
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+
+  scoreCircle: {
+    width: 96,
+    height: 96,
+    borderRadius: 48,
+    backgroundColor: '#202E43',
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+
   score: {
-    fontSize: 35,
-    fontWeight: '900',
-    color: '#176B5C',
+    fontSize: 36,
+    lineHeight: 42,
+    fontWeight: '800',
+    color: '#83E6BE',
+    fontVariant: ['tabular-nums'],
+  },
+
+  scoreUnavailable: {
+    fontSize: 29,
+    color: '#A1B0C5',
   },
 
   outOf: {
-    fontSize: 10,
-    color: '#719089',
-    marginTop: -3,
+    fontSize: 12,
+    lineHeight: 16,
+    color: '#A5C9BD',
+    marginTop: -1,
+    fontWeight: '700',
+  },
+
+  scoreCaption: {
+    fontSize: 9,
+    lineHeight: 13,
+    fontWeight: '800',
+    letterSpacing: 0.7,
+    color: '#9CBFB4',
+    marginTop: 9,
+    textAlign: 'center',
   },
 
   content: {
     flex: 1,
+    minWidth: 0,
   },
 
   title: {
-    fontSize: 21,
-    fontWeight: '900',
-    color: '#092B45',
-    marginBottom: 7,
+    fontSize: 22,
+    lineHeight: 28,
+    fontWeight: '800',
+    color: '#F4F6FF',
+    marginBottom: 8,
   },
 
   insight: {
+    fontSize: 13,
+    lineHeight: 20,
+    color: '#B2BED1',
+  },
+
+  progressSection: {
+    marginTop: 23,
+  },
+
+  progressHeader: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    marginBottom: 9,
+  },
+
+  progressLabel: {
     fontSize: 12,
-    lineHeight: 19,
-    color: '#647A8B',
+    lineHeight: 17,
+    fontWeight: '700',
+    color: '#A9B7CC',
+  },
+
+  progressValue: {
+    fontSize: 12,
+    lineHeight: 17,
+    fontWeight: '800',
+    color: '#80E2BA',
   },
 
   track: {
-    height: 8,
+    height: 9,
     borderRadius: 5,
-    backgroundColor: '#E8F0EE',
-    marginTop: 20,
+    backgroundColor: '#303D53',
     overflow: 'hidden',
   },
 
   fill: {
     height: '100%',
+    minWidth: 0,
     borderRadius: 5,
-    backgroundColor: '#3E9B87',
+    backgroundColor: '#4CC99A',
+  },
+
+  contextStrip: {
+    minHeight: 64,
+    flexDirection: 'row',
+    alignItems: 'center',
+    borderWidth: 1,
+    borderColor: '#30465A',
+    borderRadius: 15,
+    backgroundColor: '#202D42',
+    paddingHorizontal: 13,
+    paddingVertical: 11,
+    marginTop: 18,
+  },
+
+  contextIcon: {
+    width: 32,
+    height: 32,
+    borderRadius: 10,
+    backgroundColor: '#254B48',
+    alignItems: 'center',
+    justifyContent: 'center',
+    marginRight: 11,
+  },
+
+  contextIconText: {
+    fontSize: 14,
+    fontWeight: '800',
+    color: '#82E1BB',
+  },
+
+  contextCopy: {
+    flex: 1,
+    minWidth: 0,
+  },
+
+  contextTitle: {
+    fontSize: 12,
+    lineHeight: 17,
+    fontWeight: '800',
+    color: '#D8EEE6',
+  },
+
+  contextText: {
+    fontSize: 11,
+    lineHeight: 16,
+    color: '#9BAAC0',
+    marginTop: 3,
   },
 });
