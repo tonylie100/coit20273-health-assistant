@@ -1,3 +1,4 @@
+
 import { useMemo, useState } from 'react';
 import {
   KeyboardAvoidingView,
@@ -16,6 +17,7 @@ import {
   signInWithEmailAndPassword,
 } from 'firebase/auth';
 import { auth } from '../config/firebase';
+import { getFirebaseIdToken } from '../services/authService';
 
 type Mode = 'signin' | 'signup';
 
@@ -46,24 +48,33 @@ function validatePassword(value: string) {
 }
 
 function firebaseMessage(error: any) {
-  switch (error?.code) {
-    case 'auth/invalid-credential':
-    case 'auth/wrong-password':
-    case 'auth/user-not-found':
-      return 'The email or password is incorrect. Please check your details and try again.';
-    case 'auth/email-already-in-use':
-      return 'An account already exists with this email. Try signing in instead.';
-    case 'auth/invalid-email':
-      return 'Please enter a valid email address.';
-    case 'auth/weak-password':
-      return 'Please choose a stronger password.';
-    case 'auth/too-many-requests':
-      return 'Too many attempts. Please wait a moment and try again.';
-    case 'auth/network-request-failed':
-      return 'A network connection is required. Please check your connection.';
-    default:
-      return error?.message || 'Something went wrong. Please try again.';
+  if (error?.code === 'auth/invalid-credential' ||
+      error?.code === 'auth/wrong-password' ||
+      error?.code === 'auth/user-not-found') {
+    return 'The email or password is incorrect. Please check your details and try again.';
   }
+
+  if (error?.code === 'auth/email-already-in-use') {
+    return 'An account already exists with this email. Try signing in instead.';
+  }
+
+  if (error?.code === 'auth/invalid-email') {
+    return 'Please enter a valid email address.';
+  }
+
+  if (error?.code === 'auth/weak-password') {
+    return 'Please choose a stronger password.';
+  }
+
+  if (error?.code === 'auth/too-many-requests') {
+    return 'Too many attempts. Please wait a moment and try again.';
+  }
+
+  if (error?.code === 'auth/network-request-failed') {
+    return 'A network connection is required. Please check your connection.';
+  }
+
+  return error?.message || 'Something went wrong. Please try again.';
 }
 
 function HeartLogo({ small = false }: { small?: boolean }) {
@@ -71,7 +82,9 @@ function HeartLogo({ small = false }: { small?: boolean }) {
     <View style={[styles.logoHalo, small && styles.logoHaloSmall]}>
       <View style={[styles.logoRing, small && styles.logoRingSmall]}>
         <View style={[styles.logoCore, small && styles.logoCoreSmall]}>
-          <Text style={[styles.logoHeart, small && styles.logoHeartSmall]}>♥</Text>
+          <Text style={[styles.logoHeart, small && styles.logoHeartSmall]}>
+            ♥
+          </Text>
         </View>
       </View>
       <View style={styles.logoPulseDot} />
@@ -185,7 +198,13 @@ function Field({
   );
 }
 
-function Requirement({ ok, children }: { ok: boolean; children: string }) {
+function Requirement({
+  ok,
+  children,
+}: {
+  ok: boolean;
+  children: string;
+}) {
   return (
     <View style={styles.requirement}>
       <View style={[styles.requirementDot, ok && styles.requirementDotOk]}>
@@ -294,10 +313,48 @@ export default function LoginScreen() {
     try {
       setLoading(true);
 
+      // Authenticate the user with Firebase.
       if (signIn) {
         await signInWithEmailAndPassword(auth, email.trim(), password);
       } else {
-        await createUserWithEmailAndPassword(auth, email.trim(), password);
+        await createUserWithEmailAndPassword(
+          auth,
+          email.trim(),
+          password,
+        );
+      }
+
+      // Obtain the authenticated user's Firebase ID token.
+      const token = await getFirebaseIdToken();
+
+      if (!token) {
+        throw new Error(
+          'Firebase authentication succeeded, but no ID token was available.',
+        );
+      }
+
+      // Remove trailing slashes and any legacy /api/v1 suffix.
+      const apiBase = (
+        process.env.EXPO_PUBLIC_API_BASE_URL || 'http://localhost:3000'
+      )
+        .trim()
+        .replace(/\/+$/, '')
+        .replace(/\/api\/v1$/i, '');
+
+      // Ensure a PostgreSQL profile exists for both sign-in and sign-up.
+      const response = await fetch(`${apiBase}/api/profile/me`, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          Authorization: `Bearer ${token}`,
+        },
+      });
+
+      if (!response.ok) {
+        const responseText = await response.text();
+        throw new Error(
+          `Profile setup failed (${response.status}): ${responseText}`,
+        );
       }
 
       router.replace('/');
@@ -410,8 +467,18 @@ export default function LoginScreen() {
 
           {confirmPassword.length > 0 ? (
             <View style={styles.matchRow}>
-              <View style={[styles.matchDot, match ? styles.matchGood : styles.matchBad]} />
-              <Text style={[styles.matchText, match ? styles.matchTextGood : styles.matchTextBad]}>
+              <View
+                style={[
+                  styles.matchDot,
+                  match ? styles.matchGood : styles.matchBad,
+                ]}
+              />
+              <Text
+                style={[
+                  styles.matchText,
+                  match ? styles.matchTextGood : styles.matchTextBad,
+                ]}
+              >
                 {match ? 'Passwords match' : 'Passwords do not match'}
               </Text>
             </View>
@@ -480,7 +547,9 @@ export default function LoginScreen() {
 
         <View>
           <Text style={styles.securityTitle}>Secure account access</Text>
-          <Text style={styles.securityText}>Protected with Firebase Authentication</Text>
+          <Text style={styles.securityText}>
+            Protected with Firebase Authentication
+          </Text>
         </View>
       </View>
 
@@ -546,13 +615,11 @@ export default function LoginScreen() {
             <View style={styles.desktopShell}>
               <View style={styles.hero}>
                 <Veins />
-
                 <View style={styles.heroGlow} />
                 <View style={styles.heroGlowSmall} />
 
                 <View style={styles.brandRow}>
                   <HeartLogo small />
-
                   <View>
                     <Text style={styles.brandName}>AI Health Assistant</Text>
                     <Text style={styles.brandSub}>
@@ -570,7 +637,9 @@ export default function LoginScreen() {
                   <Text style={styles.heroTitle}>
                     Your health,
                     {'\n'}
-                    <Text style={styles.heroAccent}>beautifully connected.</Text>
+                    <Text style={styles.heroAccent}>
+                      beautifully connected.
+                    </Text>
                   </Text>
 
                   <PulseLine />
@@ -622,9 +691,10 @@ export default function LoginScreen() {
             <View style={styles.mobile}>
               <View style={styles.mobileBrand}>
                 <HeartLogo small />
-
                 <View style={{ flex: 1 }}>
-                  <Text style={styles.mobileBrandName}>AI Health Assistant</Text>
+                  <Text style={styles.mobileBrandName}>
+                    AI Health Assistant
+                  </Text>
                   <Text style={styles.mobileBrandSub}>
                     Your personal wellness companion
                   </Text>
@@ -633,10 +703,11 @@ export default function LoginScreen() {
 
               <View style={styles.mobileHero}>
                 <Veins />
-
                 <View style={styles.mobileKicker}>
                   <View style={styles.kickerDot} />
-                  <Text style={styles.mobileKickerText}>AI-POWERED WELLNESS</Text>
+                  <Text style={styles.mobileKickerText}>
+                    AI-POWERED WELLNESS
+                  </Text>
                 </View>
 
                 <Text style={styles.mobileHeroTitle}>
@@ -674,23 +745,19 @@ const styles = StyleSheet.create({
     backgroundColor: C.page,
     overflow: 'hidden',
   },
-
   keyboard: {
     flex: 1,
   },
-
   scroll: {
     flexGrow: 1,
     justifyContent: 'center',
     paddingHorizontal: 18,
     paddingVertical: 24,
   },
-
   scrollWide: {
     paddingHorizontal: 36,
     paddingVertical: 34,
   },
-
   pageOrbOne: {
     position: 'absolute',
     width: 440,
@@ -701,7 +768,6 @@ const styles = StyleSheet.create({
     right: -130,
     opacity: 0.75,
   },
-
   pageOrbTwo: {
     position: 'absolute',
     width: 340,
@@ -711,7 +777,6 @@ const styles = StyleSheet.create({
     bottom: -190,
     left: -140,
   },
-
   pageRing: {
     position: 'absolute',
     width: 570,
@@ -723,7 +788,6 @@ const styles = StyleSheet.create({
     left: '34%',
     opacity: 0.65,
   },
-
   desktopShell: {
     width: '100%',
     maxWidth: 1160,
@@ -735,14 +799,12 @@ const styles = StyleSheet.create({
     backgroundColor: C.white,
     borderWidth: 1,
     borderColor: '#D8E8F1',
-
     shadowColor: C.navy,
     shadowOffset: { width: 0, height: 28 },
     shadowOpacity: 0.18,
     shadowRadius: 52,
     elevation: 14,
   },
-
   hero: {
     flex: 1.12,
     minHeight: 720,
@@ -752,7 +814,6 @@ const styles = StyleSheet.create({
     position: 'relative',
     overflow: 'hidden',
   },
-
   heroGlow: {
     position: 'absolute',
     width: 500,
@@ -763,7 +824,6 @@ const styles = StyleSheet.create({
     backgroundColor: C.blue,
     opacity: 0.26,
   },
-
   heroGlowSmall: {
     position: 'absolute',
     width: 270,
@@ -774,40 +834,34 @@ const styles = StyleSheet.create({
     backgroundColor: C.sky,
     opacity: 0.11,
   },
-
   brandRow: {
     flexDirection: 'row',
     alignItems: 'center',
     gap: 13,
     zIndex: 2,
   },
-
   brandName: {
     color: C.white,
     fontSize: 18,
     fontWeight: '800',
     letterSpacing: -0.4,
   },
-
   brandSub: {
     color: '#A7CDE3',
     fontSize: 9,
     fontWeight: '600',
     marginTop: 3,
   },
-
   heroContent: {
     marginTop: 72,
     maxWidth: 510,
     zIndex: 2,
   },
-
   kickerRow: {
     flexDirection: 'row',
     alignItems: 'center',
     gap: 8,
   },
-
   kickerDot: {
     width: 7,
     height: 7,
@@ -818,14 +872,12 @@ const styles = StyleSheet.create({
     shadowOpacity: 0.85,
     shadowRadius: 9,
   },
-
   kicker: {
     color: '#8FD7F5',
     fontSize: 10,
     fontWeight: '900',
     letterSpacing: 1.7,
   },
-
   heroTitle: {
     color: C.white,
     fontSize: 46,
@@ -834,18 +886,15 @@ const styles = StyleSheet.create({
     letterSpacing: -1.8,
     marginTop: 17,
   },
-
   heroAccent: {
     color: '#6CCCF4',
   },
-
   pulse: {
     width: 178,
     height: 28,
     marginTop: 17,
     position: 'relative',
   },
-
   pulseFlat: {
     position: 'absolute',
     left: 0,
@@ -854,7 +903,6 @@ const styles = StyleSheet.create({
     height: 2,
     backgroundColor: C.cyan,
   },
-
   pulseRise: {
     position: 'absolute',
     left: 40,
@@ -864,7 +912,6 @@ const styles = StyleSheet.create({
     backgroundColor: C.cyan,
     transform: [{ rotate: '-18deg' }],
   },
-
   pulsePeak: {
     position: 'absolute',
     left: 55,
@@ -874,7 +921,6 @@ const styles = StyleSheet.create({
     backgroundColor: C.cyan,
     transform: [{ rotate: '-62deg' }],
   },
-
   pulseFall: {
     position: 'absolute',
     left: 86,
@@ -884,7 +930,6 @@ const styles = StyleSheet.create({
     backgroundColor: C.cyan,
     transform: [{ rotate: '30deg' }],
   },
-
   pulseFlatRight: {
     position: 'absolute',
     right: 0,
@@ -893,7 +938,6 @@ const styles = StyleSheet.create({
     height: 2,
     backgroundColor: C.cyan,
   },
-
   heroDescription: {
     color: '#BCD9E8',
     fontSize: 14,
@@ -901,18 +945,15 @@ const styles = StyleSheet.create({
     maxWidth: 455,
     marginTop: 17,
   },
-
   featureList: {
     marginTop: 34,
     gap: 18,
   },
-
   feature: {
     flexDirection: 'row',
     alignItems: 'flex-start',
     gap: 13,
   },
-
   featureIcon: {
     width: 35,
     height: 35,
@@ -923,23 +964,19 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     justifyContent: 'center',
   },
-
   featureSymbol: {
     color: '#80D8F7',
     fontSize: 14,
     fontWeight: '900',
   },
-
   featureCopy: {
     flex: 1,
   },
-
   featureTitle: {
     color: C.white,
     fontSize: 12,
     fontWeight: '800',
   },
-
   featureText: {
     color: '#9FC3D7',
     fontSize: 10,
@@ -947,7 +984,6 @@ const styles = StyleSheet.create({
     marginTop: 3,
     maxWidth: 410,
   },
-
   heroFooter: {
     position: 'absolute',
     left: 54,
@@ -963,7 +999,6 @@ const styles = StyleSheet.create({
     borderWidth: 1,
     borderColor: 'rgba(255,255,255,0.09)',
   },
-
   footerPulse: {
     width: 31,
     height: 31,
@@ -973,26 +1008,22 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     justifyContent: 'center',
   },
-
   footerPulseDot: {
     width: 8,
     height: 8,
     borderRadius: 4,
     backgroundColor: C.cyan,
   },
-
   footerTitle: {
     color: C.white,
     fontSize: 10,
     fontWeight: '800',
   },
-
   footerText: {
     color: '#9FC3D7',
     fontSize: 9,
     marginTop: 2,
   },
-
   logoHalo: {
     width: 66,
     height: 66,
@@ -1004,13 +1035,11 @@ const styles = StyleSheet.create({
     justifyContent: 'center',
     position: 'relative',
   },
-
   logoHaloSmall: {
     width: 50,
     height: 50,
     borderRadius: 17,
   },
-
   logoRing: {
     width: 50,
     height: 50,
@@ -1019,13 +1048,11 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     justifyContent: 'center',
   },
-
   logoRingSmall: {
     width: 39,
     height: 39,
     borderRadius: 13,
   },
-
   logoCore: {
     width: 38,
     height: 38,
@@ -1039,23 +1066,19 @@ const styles = StyleSheet.create({
     shadowRadius: 12,
     elevation: 5,
   },
-
   logoCoreSmall: {
     width: 31,
     height: 31,
     borderRadius: 11,
   },
-
   logoHeart: {
     color: C.white,
     fontSize: 18,
     fontWeight: '900',
   },
-
   logoHeartSmall: {
     fontSize: 15,
   },
-
   logoPulseDot: {
     position: 'absolute',
     width: 8,
@@ -1067,7 +1090,6 @@ const styles = StyleSheet.create({
     borderWidth: 2,
     borderColor: C.navy,
   },
-
   veins: {
     position: 'absolute',
     width: 270,
@@ -1076,7 +1098,6 @@ const styles = StyleSheet.create({
     bottom: 5,
     opacity: 0.08,
   },
-
   veinMain: {
     position: 'absolute',
     width: 3,
@@ -1087,7 +1108,6 @@ const styles = StyleSheet.create({
     borderRadius: 4,
     transform: [{ rotate: '17deg' }],
   },
-
   veinA: {
     position: 'absolute',
     width: 92,
@@ -1097,7 +1117,6 @@ const styles = StyleSheet.create({
     backgroundColor: C.cyan,
     transform: [{ rotate: '41deg' }],
   },
-
   veinB: {
     position: 'absolute',
     width: 82,
@@ -1107,7 +1126,6 @@ const styles = StyleSheet.create({
     backgroundColor: C.cyan,
     transform: [{ rotate: '-34deg' }],
   },
-
   veinC: {
     position: 'absolute',
     width: 69,
@@ -1117,7 +1135,6 @@ const styles = StyleSheet.create({
     backgroundColor: C.cyan,
     transform: [{ rotate: '40deg' }],
   },
-
   veinD: {
     position: 'absolute',
     width: 62,
@@ -1127,7 +1144,6 @@ const styles = StyleSheet.create({
     backgroundColor: C.cyan,
     transform: [{ rotate: '-41deg' }],
   },
-
   veinDotA: {
     position: 'absolute',
     width: 7,
@@ -1137,7 +1153,6 @@ const styles = StyleSheet.create({
     bottom: 121,
     backgroundColor: C.cyan,
   },
-
   veinDotB: {
     position: 'absolute',
     width: 6,
@@ -1147,7 +1162,6 @@ const styles = StyleSheet.create({
     bottom: 164,
     backgroundColor: C.cyan,
   },
-
   formPanel: {
     width: 510,
     backgroundColor: '#FBFDFE',
@@ -1155,13 +1169,11 @@ const styles = StyleSheet.create({
     paddingVertical: 40,
     justifyContent: 'center',
   },
-
   authCard: {
     width: '100%',
     maxWidth: 420,
     alignSelf: 'center',
   },
-
   cardAccent: {
     width: 42,
     height: 4,
@@ -1173,18 +1185,15 @@ const styles = StyleSheet.create({
     shadowOpacity: 0.25,
     shadowRadius: 7,
   },
-
   formHeader: {
     marginBottom: 22,
   },
-
   eyebrow: {
     flexDirection: 'row',
     alignItems: 'center',
     gap: 7,
     marginBottom: 10,
   },
-
   eyebrowHeart: {
     width: 21,
     height: 21,
@@ -1193,20 +1202,17 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     justifyContent: 'center',
   },
-
   eyebrowHeartText: {
     color: C.blue,
     fontSize: 10,
     fontWeight: '900',
   },
-
   eyebrowText: {
     color: C.blue,
     fontSize: 9,
     fontWeight: '900',
     letterSpacing: 1.35,
   },
-
   formTitle: {
     color: C.ink,
     fontSize: 31,
@@ -1214,14 +1220,12 @@ const styles = StyleSheet.create({
     fontWeight: '800',
     letterSpacing: -0.9,
   },
-
   formSubtitle: {
     color: C.muted,
     fontSize: 12,
     lineHeight: 19,
     marginTop: 7,
   },
-
   modeSwitch: {
     flexDirection: 'row',
     padding: 4,
@@ -1231,7 +1235,6 @@ const styles = StyleSheet.create({
     borderColor: '#E0EDF5',
     marginBottom: 23,
   },
-
   modeButton: {
     flex: 1,
     minHeight: 42,
@@ -1239,7 +1242,6 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     justifyContent: 'center',
   },
-
   modeButtonActive: {
     backgroundColor: C.white,
     shadowColor: C.navy,
@@ -1248,29 +1250,24 @@ const styles = StyleSheet.create({
     shadowRadius: 9,
     elevation: 2,
   },
-
   modeText: {
     color: '#7890A0',
     fontSize: 11,
     fontWeight: '700',
   },
-
   modeTextActive: {
     color: C.deep,
     fontWeight: '900',
   },
-
   field: {
     marginBottom: 15,
   },
-
   fieldLabel: {
     color: C.ink,
     fontSize: 11,
     fontWeight: '800',
     marginBottom: 7,
   },
-
   inputShell: {
     minHeight: 54,
     flexDirection: 'row',
@@ -1286,7 +1283,6 @@ const styles = StyleSheet.create({
     shadowRadius: 9,
     elevation: 1,
   },
-
   inputFocused: {
     borderColor: C.sky,
     shadowColor: C.sky,
@@ -1295,15 +1291,12 @@ const styles = StyleSheet.create({
     shadowRadius: 13,
     elevation: 3,
   },
-
   inputError: {
     borderColor: '#E38B8B',
   },
-
   inputDisabled: {
     opacity: 0.6,
   },
-
   fieldIcon: {
     width: 31,
     height: 31,
@@ -1313,17 +1306,14 @@ const styles = StyleSheet.create({
     justifyContent: 'center',
     marginRight: 10,
   },
-
   fieldIconFocused: {
     backgroundColor: '#DCEFFB',
   },
-
   fieldIconText: {
     color: C.blue,
     fontSize: 13,
     fontWeight: '900',
   },
-
   input: {
     flex: 1,
     minHeight: 52,
@@ -1332,20 +1322,17 @@ const styles = StyleSheet.create({
     paddingVertical: 0,
     ...(Platform.OS === 'web' ? ({ outlineStyle: 'none' } as any) : {}),
   },
-
   showButton: {
     minWidth: 47,
     minHeight: 44,
     alignItems: 'flex-end',
     justifyContent: 'center',
   },
-
   showText: {
     color: C.blue,
     fontSize: 10,
     fontWeight: '900',
   },
-
   passwordCard: {
     backgroundColor: '#F1F8FC',
     borderWidth: 1,
@@ -1355,40 +1342,34 @@ const styles = StyleSheet.create({
     marginTop: -3,
     marginBottom: 15,
   },
-
   passwordHeader: {
     flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'space-between',
     marginBottom: 8,
   },
-
   passwordTitle: {
     color: C.ink,
     fontSize: 10,
     fontWeight: '800',
   },
-
   strongBadge: {
     paddingHorizontal: 8,
     paddingVertical: 4,
     borderRadius: 20,
     backgroundColor: '#E3F7ED',
   },
-
   strongBadgeText: {
     color: C.success,
     fontSize: 8,
     fontWeight: '900',
   },
-
   requirement: {
     flexDirection: 'row',
     alignItems: 'center',
     gap: 7,
     marginTop: 5,
   },
-
   requirementDot: {
     width: 16,
     height: 16,
@@ -1397,31 +1378,25 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     justifyContent: 'center',
   },
-
   requirementDotOk: {
     backgroundColor: '#DDF4E8',
   },
-
   requirementMark: {
     color: '#8CA0AD',
     fontSize: 9,
     fontWeight: '900',
   },
-
   requirementMarkOk: {
     color: C.success,
   },
-
   requirementText: {
     color: '#7C909D',
     fontSize: 9,
     fontWeight: '600',
   },
-
   requirementTextOk: {
     color: '#4F7667',
   },
-
   matchRow: {
     flexDirection: 'row',
     alignItems: 'center',
@@ -1429,41 +1404,33 @@ const styles = StyleSheet.create({
     marginTop: -8,
     marginBottom: 14,
   },
-
   matchDot: {
     width: 6,
     height: 6,
     borderRadius: 3,
   },
-
   matchGood: {
     backgroundColor: C.success,
   },
-
   matchBad: {
     backgroundColor: C.danger,
   },
-
   matchText: {
     fontSize: 9,
     fontWeight: '700',
   },
-
   matchTextGood: {
     color: C.success,
   },
-
   matchTextBad: {
     color: C.danger,
   },
-
   termsRow: {
     flexDirection: 'row',
     alignItems: 'flex-start',
     gap: 9,
     marginBottom: 15,
   },
-
   checkbox: {
     width: 19,
     height: 19,
@@ -1475,25 +1442,21 @@ const styles = StyleSheet.create({
     justifyContent: 'center',
     marginTop: 1,
   },
-
   checkboxChecked: {
     backgroundColor: C.blue,
     borderColor: C.blue,
   },
-
   checkboxText: {
     color: C.white,
     fontSize: 11,
     fontWeight: '900',
   },
-
   termsText: {
     flex: 1,
     color: C.muted,
     fontSize: 9,
     lineHeight: 14,
   },
-
   errorBox: {
     flexDirection: 'row',
     alignItems: 'flex-start',
@@ -1505,7 +1468,6 @@ const styles = StyleSheet.create({
     borderColor: '#F1D3D3',
     marginBottom: 14,
   },
-
   errorIcon: {
     width: 19,
     height: 19,
@@ -1514,13 +1476,11 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     justifyContent: 'center',
   },
-
   errorIconText: {
     color: C.white,
     fontSize: 10,
     fontWeight: '900',
   },
-
   errorText: {
     flex: 1,
     color: '#8B4747',
@@ -1528,7 +1488,6 @@ const styles = StyleSheet.create({
     lineHeight: 15,
     fontWeight: '600',
   },
-
   primaryButton: {
     minHeight: 56,
     borderRadius: 16,
@@ -1540,23 +1499,19 @@ const styles = StyleSheet.create({
     shadowRadius: 18,
     elevation: 6,
   },
-
   primaryPressed: {
     backgroundColor: C.deep,
     transform: [{ scale: 0.99 }],
   },
-
   primaryDisabled: {
     opacity: 0.65,
   },
-
   primaryContent: {
     flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'center',
     paddingHorizontal: 16,
   },
-
   primaryHeart: {
     width: 26,
     height: 26,
@@ -1566,19 +1521,16 @@ const styles = StyleSheet.create({
     justifyContent: 'center',
     marginRight: 9,
   },
-
   primaryHeartText: {
     color: C.white,
     fontSize: 11,
     fontWeight: '900',
   },
-
   primaryText: {
     color: C.white,
     fontSize: 12,
     fontWeight: '900',
   },
-
   primaryArrow: {
     color: C.white,
     fontSize: 18,
@@ -1586,7 +1538,6 @@ const styles = StyleSheet.create({
     marginLeft: 9,
     marginTop: -2,
   },
-
   securityRow: {
     flexDirection: 'row',
     alignItems: 'center',
@@ -1594,7 +1545,6 @@ const styles = StyleSheet.create({
     gap: 8,
     marginTop: 14,
   },
-
   securityBadge: {
     width: 22,
     height: 22,
@@ -1603,25 +1553,21 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     justifyContent: 'center',
   },
-
   securityCheck: {
     color: C.blue,
     fontSize: 10,
     fontWeight: '900',
   },
-
   securityTitle: {
     color: '#607A89',
     fontSize: 9,
     fontWeight: '800',
   },
-
   securityText: {
     color: '#9AAAB4',
     fontSize: 8,
     marginTop: 1,
   },
-
   dividerRow: {
     flexDirection: 'row',
     alignItems: 'center',
@@ -1629,20 +1575,17 @@ const styles = StyleSheet.create({
     marginTop: 22,
     marginBottom: 13,
   },
-
   divider: {
     flex: 1,
     height: 1,
     backgroundColor: '#E1ECF2',
   },
-
   dividerText: {
     color: '#96A8B2',
     fontSize: 7,
     fontWeight: '900',
     letterSpacing: 1.1,
   },
-
   healthStrip: {
     minHeight: 72,
     borderRadius: 16,
@@ -1652,12 +1595,10 @@ const styles = StyleSheet.create({
     flexDirection: 'row',
     alignItems: 'center',
   },
-
   healthItem: {
     flex: 1,
     alignItems: 'center',
   },
-
   healthIcon: {
     width: 25,
     height: 25,
@@ -1667,44 +1608,37 @@ const styles = StyleSheet.create({
     justifyContent: 'center',
     marginBottom: 4,
   },
-
   healthHeart: {
     color: C.blue,
     fontSize: 11,
     fontWeight: '900',
   },
-
   healthAi: {
     color: C.blue,
     fontSize: 10,
     fontWeight: '900',
   },
-
   healthValue: {
     color: C.deep,
     fontSize: 8,
     fontWeight: '900',
     letterSpacing: 0.4,
   },
-
   healthLabel: {
     color: '#93A5B0',
     fontSize: 7,
     marginTop: 2,
   },
-
   healthDivider: {
     width: 1,
     height: 37,
     backgroundColor: '#DFEAF0',
   },
-
   stepsIcon: {
     width: 16,
     height: 17,
     position: 'relative',
   },
-
   stepOne: {
     position: 'absolute',
     width: 7,
@@ -1715,7 +1649,6 @@ const styles = StyleSheet.create({
     top: 0,
     transform: [{ rotate: '-18deg' }],
   },
-
   stepTwo: {
     position: 'absolute',
     width: 7,
@@ -1726,7 +1659,6 @@ const styles = StyleSheet.create({
     bottom: 0,
     transform: [{ rotate: '-18deg' }],
   },
-
   disclaimer: {
     color: '#94A5AF',
     fontSize: 8,
@@ -1734,13 +1666,11 @@ const styles = StyleSheet.create({
     textAlign: 'center',
     marginTop: 14,
   },
-
   mobile: {
     width: '100%',
     maxWidth: 520,
     alignSelf: 'center',
   },
-
   mobileBrand: {
     flexDirection: 'row',
     alignItems: 'center',
@@ -1748,19 +1678,16 @@ const styles = StyleSheet.create({
     paddingHorizontal: 3,
     marginBottom: 16,
   },
-
   mobileBrandName: {
     color: C.ink,
     fontSize: 18,
     fontWeight: '800',
   },
-
   mobileBrandSub: {
     color: C.muted,
     fontSize: 9,
     marginTop: 2,
   },
-
   mobileHero: {
     minHeight: 220,
     backgroundColor: C.navy,
@@ -1770,27 +1697,23 @@ const styles = StyleSheet.create({
     marginBottom: 16,
     overflow: 'hidden',
     position: 'relative',
-
     shadowColor: C.navy,
     shadowOffset: { width: 0, height: 13 },
     shadowOpacity: 0.22,
     shadowRadius: 21,
     elevation: 7,
   },
-
   mobileKicker: {
     flexDirection: 'row',
     alignItems: 'center',
     gap: 7,
   },
-
   mobileKickerText: {
     color: '#8FD7F5',
     fontSize: 8,
     fontWeight: '900',
     letterSpacing: 1.2,
   },
-
   mobileHeroTitle: {
     color: C.white,
     fontSize: 28,
@@ -1799,7 +1722,6 @@ const styles = StyleSheet.create({
     letterSpacing: -0.8,
     marginTop: 12,
   },
-
   mobileHeroText: {
     color: '#B9D6E6',
     fontSize: 10,
@@ -1807,14 +1729,12 @@ const styles = StyleSheet.create({
     maxWidth: 350,
     marginTop: 4,
   },
-
   mobileHealthRow: {
     flexDirection: 'row',
     alignItems: 'center',
     gap: 17,
     marginTop: 14,
   },
-
   mobileHealthItem: {
     color: '#8CCFEF',
     fontSize: 9,
