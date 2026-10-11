@@ -19,7 +19,7 @@ app.use((req, res, next) => {
   console.log(`[${new Date().toLocaleTimeString()}] ${req.method} ${req.url}`);
   next();
 });
-const PORT = process.env.PORT || 5000;
+const PORT = process.env.PORT || 3000;
 
 // Middleware
 app.use(cors());
@@ -47,6 +47,9 @@ app.use((req, res, next) => {
 // API Routes
 app.use('/api/auth', authRoutes);
 app.use('/api/profile', profileRoutes);
+
+console.log('[PROFILE ROUTER]', typeof profileRoutes, profileRoutes.stack.map(x => `${x.route?.path ?? 'middleware'}: ${x.route ? Object.keys(x.route.methods).join(',') : ''}`));
+
 app.use('/api/goals', goalRoutes);
 app.use('/api/health-data', healthDataRoutes);
 app.use('/api/dashboard', dashboardRoutes);
