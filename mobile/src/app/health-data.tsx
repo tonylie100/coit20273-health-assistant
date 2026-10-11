@@ -1,4 +1,4 @@
-import React, { useMemo, useState } from 'react';
+import React, { useEffect, useMemo, useState } from 'react';
 import {
   KeyboardAvoidingView,
   Platform,
@@ -19,6 +19,7 @@ import {
 } from '../services/healthState';
 
 import {
+  getMyProfile,
   submitHealthData,
   type HealthDataPayload,
 } from '../services/apiService';
@@ -77,12 +78,11 @@ export default function HealthDataScreen() {
 
   const currentHealth = getHealthState();
 
-  const [userId, setUserId] = useState(
-    currentHealth.userId?.toString() || '1'
-  );
-
-  // Display name identifies the person; User ID remains the record key.
+  // Identity is loaded from the authenticated Firebase account.
+  const [userId, setUserId] = useState('');
   const [userName, setUserName] = useState('');
+  const [profileLoading, setProfileLoading] = useState(true);
+  const [profileError, setProfileError] = useState('');
 
   const [steps, setSteps] = useState(
     currentHealth.steps > 0
@@ -136,6 +136,46 @@ export default function HealthDataScreen() {
   const [successMessage, setSuccessMessage] =
     useState('');
 
+  useEffect(() => {
+    let active = true;
+
+    async function loadProfile() {
+      setProfileLoading(true);
+      setProfileError('');
+
+      try {
+        const profile = await getMyProfile();
+
+        if (!active) return;
+
+        setUserId(String(profile.user_id));
+        setUserName(profile.full_name ?? '');
+
+        updateHealthState({
+          userId: profile.user_id,
+        });
+      } catch (error) {
+        if (!active) return;
+
+        setProfileError(
+          error instanceof Error
+            ? error.message
+            : 'Unable to load your profile.',
+        );
+      } finally {
+        if (active) {
+          setProfileLoading(false);
+        }
+      }
+    }
+
+    void loadProfile();
+
+    return () => {
+      active = false;
+    };
+  }, []);
+
   const completion = useMemo(() => {
     const fields = [
       steps,
@@ -183,16 +223,14 @@ export default function HealthDataScreen() {
       caloriesBurned
     );
 
-    if (!userName.trim()) {
-      return 'Please enter the name of the person whose record you are updating.';
-    }
-
     if (
+      profileLoading ||
+      profileError ||
       !userId.trim() ||
       !Number.isInteger(userIdValue) ||
       userIdValue <= 0
     ) {
-      return 'Please enter a valid positive User ID.';
+      return profileError || 'Your account profile is not available yet.';
     }
 
     if (
@@ -244,6 +282,13 @@ export default function HealthDataScreen() {
   const handleSave = async () => {
     clearMessages();
 
+    if (profileLoading || profileError || !userId) {
+      setErrorMessage(
+        profileError || 'Please wait while your account profile loads.',
+      );
+      return;
+    }
+
     const validationError = validate();
 
     if (validationError) {
@@ -273,9 +318,8 @@ export default function HealthDataScreen() {
       ? Number(caloriesBurned)
       : 0;
 
-    const payload: HealthDataPayload & { user_name: string } = {
+    const payload: HealthDataPayload = {
       user_id: userIdValue,
-      user_name: userName.trim(),
       step_count: stepsValue,
       sleep_hours: sleepValue,
       heart_rate_avg: heartRateValue,
@@ -547,30 +591,38 @@ export default function HealthDataScreen() {
                 />
 
                 <View style={styles.card}>
+                  {profileLoading ? (
+                    <Text style={styles.inputHint}>
+                      Loading your authenticated profile...
+                    </Text>
+                  ) : null}
+
+                  {profileError ? (
+                    <Text style={{ color: colors.danger, paddingVertical: 8 }}>
+                      {profileError}
+                    </Text>
+                  ) : null}
+
                   <InputField
                     label="User Name"
-                    hint="Name of the person whose health record is being updated"
+                    hint="Name from your linked account profile"
                     value={userName}
-                    onChangeText={(value) => {
-                      clearMessages();
-                      setUserName(value);
-                    }}
+                    onChangeText={setUserName}
                     keyboardType="default"
                     icon="NAME"
                     accent={colors.primary}
+                    editable={false}
                   />
 
                   <InputField
                     label="User ID"
-                    hint="Numeric project health record identifier"
+                    hint="Database ID linked to your account"
                     value={userId}
-                    onChangeText={(value) => {
-                      clearMessages();
-                      setUserId(value);
-                    }}
+                    onChangeText={setUserId}
                     keyboardType="number-pad"
                     icon="ID"
                     accent={colors.primary}
+                    editable={false}
                     last
                   />
                 </View>
@@ -883,19 +935,19 @@ export default function HealthDataScreen() {
                   <Pressable
                     accessibilityRole="button"
                     accessibilityState={{
-                      disabled: submitting,
+                      disabled: submitting || profileLoading || !!profileError || !userId,
                       busy: submitting,
                     }}
                     style={({ pressed }) => [
                       styles.saveButton,
-                      submitting &&
+                      (submitting || profileLoading || !!profileError || !userId) &&
                         styles.saveButtonDisabled,
                       pressed &&
                         !submitting &&
                         styles.pressed,
                     ]}
                     onPress={handleSave}
-                    disabled={submitting}
+                    disabled={submitting || profileLoading || !!profileError || !userId}
                   >
                     <Text
                       style={
@@ -1146,6 +1198,7 @@ function InputField({
   icon,
   accent = colors.primary,
   last = false,
+  editable = true,
 }: {
   label: string;
   hint: string;
@@ -1159,6 +1212,7 @@ function InputField({
   icon: string;
   accent?: string;
   last?: boolean;
+  editable?: boolean;
 }) {
   return (
     <View
@@ -1206,6 +1260,7 @@ function InputField({
           value={value}
           onChangeText={onChangeText}
           keyboardType={keyboardType}
+          editable={editable}
           style={styles.input}
           placeholder="Enter value"
           placeholderTextColor={
