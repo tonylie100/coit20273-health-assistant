@@ -1,9 +1,11 @@
-const verifyToken = require('../middleware/verifyToken');
+
 const express = require('express');
+const verifyToken = require('../middleware/verifyToken');
 
 const router = express.Router();
 
 const API_URL = 'https://api.llmsrelay.com/v1/messages';
+const MODEL = 'claude-sonnet-4.6';
 
 const SYSTEM_PROMPT = `
 You are an AI Personal Health Assistant.
@@ -19,41 +21,27 @@ Safety rules:
 - For serious or urgent symptoms, encourage the user to seek appropriate professional medical care.
 - For mental-health concerns, respond empathetically and encourage appropriate professional support when needed.
 - Clearly communicate uncertainty when information is not definitive.
+- Never invent the user's health readings or medical history.
 `;
 
 router.post('/message', verifyToken, async (req, res) => {
   try {
-    const { message } = req.body;
+    const message =
+      typeof req.body?.message === 'string'
+        ? req.body.message.trim()
+        : '';
 
-    if (!message || !message.trim()) {
+    if (!message) {
       return res.status(400).json({
         success: false,
         error: 'Message is required'
       });
     }
 
-    // Dynamic Dev Mock for smooth testing/demos
-    const lowerMsg = message.toLowerCase();
-    let mockReply = "I am your AI Health Companion! How can I assist you with your daily wellness goals today?";
-
-    if (lowerMsg.includes('sleep')) {
-      mockReply = "To improve your sleep quality, maintain a consistent sleep schedule, avoid screens 1 hour before bed, and keep your room dark and cool.";
-    } else if (lowerMsg.includes('drink') || lowerMsg.includes('water') || lowerMsg.includes('hydrat')) {
-      mockReply = "Staying hydrated is crucial! Aim for 2 to 2.5 liters (about 8 glasses) of water per day, and drink more if you are physically active.";
-    } else if (lowerMsg.includes('eat') || lowerMsg.includes('food') || lowerMsg.includes('diet')) {
-      mockReply = "Focus on balanced meals containing lean proteins, whole grains, healthy fats, and a colorful variety of fruits and vegetables.";
-    }
-
-    return res.json({
-      success: true,
-      reply: mockReply,
-      model: 'claude-sonnet-4.6'
-    });
-
-    const apiKey = process.env.LLMSRELAY_API_KEY;
+    const apiKey = process.env.LLMSRELAY_API_KEY?.trim();
 
     if (!apiKey) {
-      return res.status(500).json({
+      return res.status(503).json({
         success: false,
         error: 'LLMsRelay API key is not configured'
       });
@@ -67,7 +55,7 @@ router.post('/message', verifyToken, async (req, res) => {
         'anthropic-version': '2023-06-01'
       },
       body: JSON.stringify({
-        model: 'claude-sonnet-4.6',
+        model: MODEL,
         max_tokens: 500,
         system: SYSTEM_PROMPT,
         messages: [
@@ -76,48 +64,61 @@ router.post('/message', verifyToken, async (req, res) => {
             content: message
           }
         ]
-      })
+      }),
+      signal: AbortSignal.timeout(30000)
     });
 
     if (!response.ok) {
       const errorText = await response.text();
 
+      // Do not log the API key.
       console.error(
-        `Claude API request failed: ${response.status} ${errorText}`
+        `LLMsRelay API error: HTTP ${response.status}`,
+        errorText.slice(0, 500)
       );
 
-      return res.status(response.status).json({
+      return res.status(502).json({
         success: false,
-        error: 'Claude API request failed'
+        error: 'The AI service could not generate a response.',
+        upstreamStatus: response.status
       });
     }
 
     const data = await response.json();
 
-    const text = data.content
-      ?.filter((item) => item.type === 'text')
-      ?.map((item) => item.text)
-      ?.join('');
+    const reply = Array.isArray(data.content)
+      ? data.content
+          .filter(item => item.type === 'text')
+          .map(item => item.text)
+          .join('\n')
+          .trim()
+      : '';
 
-    if (!text) {
-      return res.status(500).json({
+    if (!reply) {
+      return res.status(502).json({
         success: false,
-        error: 'Claude returned an empty response'
+        error: 'The AI service returned an empty response.'
       });
     }
 
-    return res.json({
+    return res.status(200).json({
       success: true,
-      reply: text,
-      model: 'claude-sonnet-4.6'
+      reply,
+      model: MODEL,
+      source: 'live_ai'
     });
-
   } catch (error) {
-    console.error('Chatbot backend error:', error);
+    console.error('Chatbot backend error:', error.message);
 
-    return res.status(500).json({
+    const timedOut =
+      error.name === 'TimeoutError' ||
+      error.name === 'AbortError';
+
+    return res.status(timedOut ? 504 : 500).json({
       success: false,
-      error: 'Unable to generate chatbot response'
+      error: timedOut
+        ? 'The AI service timed out. Please try again.'
+        : 'Unable to generate a response at this time.'
     });
   }
 });
