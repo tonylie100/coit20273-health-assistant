@@ -1,3 +1,5 @@
+const recommendationRoutes = require('./routes/recommendationRoutes');
+
 require('dotenv').config();
 
 const express = require('express');
@@ -13,7 +15,11 @@ const authRoutes = require('./routes/auth');
 const chatbotRoutes = require('./routes/chatbot');
 
 const app = express();
-const PORT = 3000;
+app.use((req, res, next) => {
+  console.log(`[${new Date().toLocaleTimeString()}] ${req.method} ${req.url}`);
+  next();
+});
+const PORT = process.env.PORT || 5000;
 
 // Middleware
 app.use(cors());
@@ -46,6 +52,7 @@ app.use('/api/health-data', healthDataRoutes);
 app.use('/api/dashboard', dashboardRoutes);
 app.use('/api/chatbot', chatbotRoutes);
 app.use('/api/v1/metrics', metricsRoutes);
+app.use('/api/v1/recommendations', recommendationRoutes);
 
 // Root route
 app.get('/', (req, res) => {

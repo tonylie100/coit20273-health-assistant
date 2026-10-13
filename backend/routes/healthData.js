@@ -22,11 +22,18 @@ router.post('/', verifyToken, async (req, res) => {
   try {
     const {
       recordDate,
+      record_date,
+      created_at,
       steps,
+      step_count,
       heartRate,
+      heart_rate_avg,
       sleepHours,
+      sleep_hours,
       caloriesBurned,
-      waterIntake
+      calories_burned,
+      waterIntake,
+      water_intake
     } = req.body;
 
     // Find the authenticated user
@@ -111,9 +118,9 @@ router.post('/', verifyToken, async (req, res) => {
       `INSERT INTO health_data
        (
          user_id,
-         record_date,
+         created_at,
          steps,
-         heart_rate,
+         heart_rate_avg,
          sleep_hours,
          calories_burned,
          water_intake
