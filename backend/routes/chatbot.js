@@ -1,10 +1,11 @@
-const verifyToken = require('../middleware/verifyToken');
+
 const express = require('express');
-const pool = require('../db');
+const verifyToken = require('../middleware/verifyToken');
 
 const router = express.Router();
 
 const API_URL = 'https://api.llmsrelay.com/v1/messages';
+const MODEL = 'claude-sonnet-4.6';
 
 const SYSTEM_PROMPT = `
 You are an AI Personal Health Assistant.
@@ -23,6 +24,7 @@ Safety rules:
 - For serious or urgent symptoms, encourage the user to seek appropriate professional medical care.
 - For mental-health concerns, respond empathetically and encourage appropriate professional support when needed.
 - Clearly communicate uncertainty when information is not definitive.
+- Never invent the user's health readings or medical history.
 - Treat the health data as informational context, not as a medical diagnosis.
 `;
 
@@ -38,11 +40,10 @@ router.post('/message', verifyToken, async (req, res) => {
       });
     }
 
-    // Check API key
-    const apiKey = process.env.LLMSRELAY_API_KEY;
+    const apiKey = process.env.LLMSRELAY_API_KEY?.trim();
 
     if (!apiKey) {
-      return res.status(500).json({
+      return res.status(503).json({
         success: false,
         error: 'LLMsRelay API key is not configured'
       });
@@ -164,7 +165,7 @@ ${message}
         'anthropic-version': '2023-06-01'
       },
       body: JSON.stringify({
-        model: 'claude-sonnet-4.6',
+        model: MODEL,
         max_tokens: 500,
         system: SYSTEM_PROMPT,
         messages
@@ -174,27 +175,33 @@ ${message}
     if (!response.ok) {
       const errorText = await response.text();
 
+      // Do not log the API key.
       console.error(
-        `Claude API request failed: ${response.status} ${errorText}`
+        `LLMsRelay API error: HTTP ${response.status}`,
+        errorText.slice(0, 500)
       );
 
-      return res.status(response.status).json({
+      return res.status(502).json({
         success: false,
-        error: 'Claude API request failed'
+        error: 'The AI service could not generate a response.',
+        upstreamStatus: response.status
       });
     }
 
     const data = await response.json();
 
-    const text = data.content
-      ?.filter((item) => item.type === 'text')
-      ?.map((item) => item.text)
-      ?.join('');
+    const reply = Array.isArray(data.content)
+      ? data.content
+          .filter(item => item.type === 'text')
+          .map(item => item.text)
+          .join('\n')
+          .trim()
+      : '';
 
-    if (!text) {
-      return res.status(500).json({
+    if (!reply) {
+      return res.status(502).json({
         success: false,
-        error: 'Claude returned an empty response'
+        error: 'The AI service returned an empty response.'
       });
     }
 
@@ -213,13 +220,18 @@ ${message}
           : null
       }
     });
-
   } catch (error) {
-    console.error('Chatbot backend error:', error);
+    console.error('Chatbot backend error:', error.message);
 
-    return res.status(500).json({
+    const timedOut =
+      error.name === 'TimeoutError' ||
+      error.name === 'AbortError';
+
+    return res.status(timedOut ? 504 : 500).json({
       success: false,
-      error: 'Unable to generate chatbot response'
+      error: timedOut
+        ? 'The AI service timed out. Please try again.'
+        : 'Unable to generate a response at this time.'
     });
   }
 });

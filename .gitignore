@@ -147,3 +147,7 @@ dist
 vite.config.js.timestamp-*
 vite.config.ts.timestamp-*
 .vite/
+
+pulsewell-backup.dump
+pg_hba.conf.backup
+backend/check-tables.js
