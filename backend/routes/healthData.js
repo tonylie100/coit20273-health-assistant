@@ -1,6 +1,7 @@
 
 const express = require('express');
 const router = express.Router();
+
 const pool = require('../db');
 const verifyToken = require('../middleware/verifyToken');
 
@@ -85,7 +86,7 @@ router.post('/', verifyToken, async (req, res) => {
       healthData: result.rows[0]
     });
   } catch (error) {
-    console.error('Health data ingestion error:', error);
+    console.error('Health data save error:', error);
 
     return res.status(500).json({
       message: 'Failed to save health data',
@@ -120,7 +121,15 @@ router.get('/user/:userId', verifyToken, async (req, res) => {
     }
 
     const result = await pool.query(
-      `SELECT *
+      `SELECT
+         health_data_id,
+         user_id,
+         record_date,
+         steps,
+         heart_rate,
+         sleep_hours,
+         calories_burned,
+         water_intake
        FROM health_data
        WHERE user_id = $1
        ORDER BY record_date DESC, health_data_id DESC`,
@@ -128,13 +137,72 @@ router.get('/user/:userId', verifyToken, async (req, res) => {
     );
 
     return res.status(200).json({
+      success: true,
       message: 'Health data retrieved successfully',
+      user: {
+        user_id: user.user_id,
+        user_name: user.full_name,
+        email: user.email
+      },
       healthData: result.rows
     });
   } catch (error) {
     console.error('Health data retrieval error:', error);
 
     return res.status(500).json({
+      success: false,
+      message: 'Failed to retrieve health data',
+      error: error.message
+    });
+  }
+});
+
+
+// GET - RETRIEVE A SPECIFIC USER'S RECORD BY DATE
+router.get('/date/:recordDate', verifyToken, async (req, res) => {
+  try {
+    const { recordDate } = req.params;
+
+    const user = await getDatabaseUser(req.user.uid);
+
+    if (!user) {
+      return res.status(404).json({
+        success: false,
+        message: 'User account not found'
+      });
+    }
+
+    const result = await pool.query(
+      `SELECT
+         health_data_id,
+         user_id,
+         record_date,
+         steps,
+         heart_rate,
+         sleep_hours,
+         calories_burned,
+         water_intake
+       FROM health_data
+       WHERE user_id = $1
+       AND record_date = $2`,
+      [user.user_id, recordDate]
+    );
+
+    return res.status(200).json({
+      success: true,
+      message: 'Health data retrieved successfully',
+      user: {
+        user_id: user.user_id,
+        user_name: user.full_name
+      },
+      healthData: result.rows
+    });
+
+  } catch (error) {
+    console.error('Health data date retrieval error:', error);
+
+    return res.status(500).json({
+      success: false,
       message: 'Failed to retrieve health data',
       error: 'An unexpected server error occurred.'
     });
