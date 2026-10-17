@@ -16,7 +16,7 @@ PulseWell is a full-stack, AI-driven personal health assistant designed to aggre
 ## 📸 Screenshots & Architecture
 
 ### **1. System Architecture Diagram**
-![System Architecture Diagram](docs/images/architecture_placeholder.png)
+![System Architecture Diagram](docs/images/architecture_placeholder.jpg)
 *(High-level overview connecting the React Native mobile/web app, Express backend, PostgreSQL database, and Gemini/LLMsRelay AI layer.)*
 
 ### **2. Mobile & Web UI Dashboard**
